@@ -5,27 +5,21 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design system definition.
- *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
- *
- * The :root and .dark blocks define the actual color values using oklch.
- * All colors MUST use oklch format.
- *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ * MK VISION design system — professional broadcast equipment language.
+ * Matte black chassis, brushed charcoal panels, engraved labels,
+ * illuminated RED (program) / GREEN (preview) / AMBER (warning) buttons.
+ * All colors in oklch. Never hardcode colors in components.
  */
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -45,91 +39,83 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-ring-offset-background: var(--background);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Broadcast surfaces */
+  --color-chassis: var(--chassis);
+  --color-panel: var(--panel);
+  --color-panel-raised: var(--panel-raised);
+  --color-bezel: var(--bezel);
+  --color-engrave: var(--engrave);
+
+  /* Illumination */
+  --color-program: var(--program);
+  --color-program-dim: var(--program-dim);
+  --color-preview: var(--preview);
+  --color-preview-dim: var(--preview-dim);
+  --color-amber: var(--amber);
+  --color-led-off: var(--led-off);
+
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
-}
+  --radius: 0.25rem;
 
-.dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --background: oklch(0.16 0.004 260);
+  --foreground: oklch(0.93 0.003 260);
+
+  --chassis: oklch(0.13 0.004 260);
+  --panel: oklch(0.2 0.005 260);
+  --panel-raised: oklch(0.26 0.006 260);
+  --bezel: oklch(0.1 0.004 260);
+  --engrave: oklch(0.66 0.005 260);
+
+  --card: oklch(0.2 0.005 260);
+  --card-foreground: oklch(0.93 0.003 260);
+  --popover: oklch(0.22 0.005 260);
+  --popover-foreground: oklch(0.93 0.003 260);
+
+  --primary: oklch(0.72 0.02 260);
+  --primary-foreground: oklch(0.14 0.004 260);
+  --secondary: oklch(0.26 0.006 260);
+  --secondary-foreground: oklch(0.93 0.003 260);
+  --muted: oklch(0.24 0.005 260);
+  --muted-foreground: oklch(0.63 0.005 260);
+  --accent: oklch(0.3 0.006 260);
+  --accent-foreground: oklch(0.95 0.003 260);
+
+  --program: oklch(0.58 0.235 26);
+  --program-dim: oklch(0.3 0.09 26);
+  --preview: oklch(0.72 0.21 148);
+  --preview-dim: oklch(0.34 0.08 148);
+  --amber: oklch(0.79 0.16 78);
+  --led-off: oklch(0.3 0.005 260);
+
+  --destructive: oklch(0.58 0.235 26);
+  --destructive-foreground: oklch(0.97 0.003 260);
+  --border: oklch(0.31 0.006 260);
+  --input: oklch(0.24 0.005 260);
+  --ring: oklch(0.55 0.02 260);
+
+  /* Equipment textures and illumination shadows */
+  --brushed-panel: linear-gradient(
+    180deg,
+    oklch(0.27 0.006 260) 0%,
+    oklch(0.21 0.005 260) 42%,
+    oklch(0.18 0.004 260) 100%
+  );
+  --brushed-chassis: linear-gradient(
+    180deg,
+    oklch(0.19 0.005 260) 0%,
+    oklch(0.13 0.004 260) 100%
+  );
+  --inset-bezel:
+    inset 0 1px 0 oklch(1 0 0 / 6%), inset 0 -1px 0 oklch(0 0 0 / 45%),
+    0 1px 2px oklch(0 0 0 / 50%);
+  --glow-program: 0 0 0 1px oklch(0.68 0.2 26 / 70%), 0 0 18px oklch(0.58 0.235 26 / 55%);
+  --glow-preview: 0 0 0 1px oklch(0.78 0.18 148 / 65%), 0 0 18px oklch(0.72 0.21 148 / 45%);
+  --glow-amber: 0 0 0 1px oklch(0.85 0.14 78 / 65%), 0 0 16px oklch(0.79 0.16 78 / 45%);
 }
 
 @layer base {
@@ -137,8 +123,91 @@
     border-color: var(--color-border);
   }
 
+  html,
   body {
-    background-color: var(--color-background);
+    height: 100%;
+    background: var(--brushed-chassis);
     color: var(--color-foreground);
+    font-family: var(--font-display);
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
   }
+
+  /* Live production surface: never let a drag select label text. */
+  body {
+    user-select: none;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+  }
+}
+
+/* Engraved equipment label */
+@utility mk-label {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-engrave);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-shadow: 0 1px 0 oklch(0 0 0 / 60%);
+}
+
+/* Brushed metal control panel */
+@utility mk-panel {
+  background: var(--brushed-panel);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--inset-bezel);
+}
+
+@utility mk-chassis {
+  background: var(--brushed-chassis);
+}
+
+/* Unlit broadcast button */
+@utility mk-button {
+  position: relative;
+  background: var(--brushed-panel);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--inset-bezel);
+  color: var(--color-engrave);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  transition:
+    background-color 60ms linear,
+    box-shadow 60ms linear,
+    color 60ms linear;
+
+  &:active {
+    transform: translateY(1px);
+  }
+}
+
+@utility mk-lit-program {
+  background: var(--color-program);
+  color: var(--color-destructive-foreground);
+  box-shadow: var(--glow-program);
+  border-color: var(--color-program);
+}
+
+@utility mk-lit-preview {
+  background: var(--color-preview);
+  color: oklch(0.15 0.02 148);
+  box-shadow: var(--glow-preview);
+  border-color: var(--color-preview);
+}
+
+@utility mk-lit-amber {
+  background: var(--color-amber);
+  color: oklch(0.18 0.03 78);
+  box-shadow: var(--glow-amber);
+  border-color: var(--color-amber);
+}
+
+@utility mk-tally-program {
+  box-shadow: var(--glow-program);
 }

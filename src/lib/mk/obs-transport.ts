@@ -38,7 +38,14 @@ export class ObsTransport implements Transport {
       void this.refreshScenes();
     });
     this.obs.on("SceneItemEnableStateChanged", (data) => {
-      this.bus.emit({ type: "dsk", on: data.sceneItemEnabled });
+      // Only mirror the configured DSK item, not every source in every scene.
+      if (
+        this.dskTarget &&
+        data.sceneName === this.dskTarget.scene &&
+        data.sceneItemId === this.dskTarget.id
+      ) {
+        this.bus.emit({ type: "dsk", on: data.sceneItemEnabled });
+      }
     });
   }
 
