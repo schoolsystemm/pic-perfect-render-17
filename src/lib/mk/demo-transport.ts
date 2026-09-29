@@ -16,8 +16,8 @@ const DEMO_TRANSITIONS = ["Cut", "Fade", "Fade to Color", "Swipe", "Slide", "Sti
 
 export class DemoTransport implements Transport {
   private bus = new EventBus();
-  private program = DEMO_SCENES[0];
-  private preview = DEMO_SCENES[1];
+  private program: string = DEMO_SCENES[0]!;
+  private preview: string = DEMO_SCENES[1]!;
   private dsk = false;
 
   subscribe = this.bus.subscribe;
