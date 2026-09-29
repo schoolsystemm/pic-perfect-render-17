@@ -116,7 +116,7 @@ export class ObsTransport implements Transport {
   async getCurrentProgramScene() {
     try {
       const res = await this.obs.call("GetCurrentProgramScene");
-      return (res.currentProgramSceneName ?? null) as string | null;
+      return (res["currentProgramSceneName"] ?? null) as string | null;
     } catch {
       return null;
     }
@@ -125,7 +125,7 @@ export class ObsTransport implements Transport {
   async getCurrentPreviewScene() {
     try {
       const res = await this.obs.call("GetCurrentPreviewScene");
-      return (res.currentPreviewSceneName ?? null) as string | null;
+      return (res["currentPreviewSceneName"] ?? null) as string | null;
     } catch {
       return null;
     }
@@ -159,7 +159,7 @@ export class ObsTransport implements Transport {
   private async currentTransition(): Promise<string | null> {
     try {
       const res = await this.obs.call("GetCurrentSceneTransition");
-      return (res.transitionName ?? null) as string | null;
+      return (res["transitionName"] ?? null) as string | null;
     } catch {
       return null;
     }
