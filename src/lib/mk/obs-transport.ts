@@ -13,6 +13,7 @@ export class ObsTransport implements Transport {
   private obs = new OBSWebSocket();
   private bus = new EventBus();
   private manualClose = false;
+  private dskTarget: { scene: string; source: string; id: number } | null = null;
 
   constructor(private options: ObsTransportOptions) {
     this.obs.on("ConnectionClosed", () => {
@@ -194,6 +195,7 @@ export class ObsTransport implements Transport {
       sceneName: scene,
       sourceName: source,
     });
+    this.dskTarget = { scene, source, id: sceneItemId };
     await this.obs.call("SetSceneItemEnabled", {
       sceneName: scene,
       sceneItemId,
