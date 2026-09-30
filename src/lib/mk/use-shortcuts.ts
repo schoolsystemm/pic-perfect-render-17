@@ -34,7 +34,12 @@ export function useShortcuts(shortcuts: Shortcuts, enabled = true) {
       }
       if (key === shortcuts.dsk.toLowerCase()) {
         event.preventDefault();
-        void engine.toggleDSK();
+        void engine.toggleDSK(0);
+        return;
+      }
+      if (key === shortcuts.dsk2.toLowerCase()) {
+        event.preventDefault();
+        void engine.toggleDSK(1);
       }
     };
     window.addEventListener("keydown", handler);

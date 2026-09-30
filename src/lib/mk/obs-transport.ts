@@ -2,6 +2,7 @@
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
+import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
 
 export interface ObsTransportOptions {
   host: string;
@@ -9,12 +10,30 @@ export interface ObsTransportOptions {
   password: string;
 }
 
+const MONITOR_TO_OBS: Record<MonitorType, string> = {
+  none: "OBS_MONITORING_TYPE_NONE",
+  monitorOnly: "OBS_MONITORING_TYPE_MONITOR_ONLY",
+  monitorAndOutput: "OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT",
+};
+
+function monitorFromObs(value: string | undefined): MonitorType {
+  if (value === MONITOR_TO_OBS.monitorOnly) return "monitorOnly";
+  if (value === MONITOR_TO_OBS.monitorAndOutput) return "monitorAndOutput";
+  return "none";
+}
+
+interface DskItem {
+  scene: string;
+  source: string;
+  id: number;
+}
+
 export class ObsTransport implements Transport {
   private obs = new OBSWebSocket();
   private bus = new EventBus();
   private manualClose = false;
   private lastMeter = 0;
-  private dskTarget: { scene: string; source: string; id: number } | null = null;
+  private dskItems: (DskItem | null)[] = Array.from({ length: DSK_COUNT }, () => null);
 
   constructor(private options: ObsTransportOptions) {
     this.obs.on("ConnectionClosed", () => {
@@ -36,14 +55,23 @@ export class ObsTransport implements Transport {
     this.obs.on("SceneListChanged", () => {
       void this.getScenes().then((scenes) => this.bus.emit({ type: "scenes", scenes }));
     });
-    this.obs.on("SceneTransitionEnded", () => {
-      void this.refreshScenes();
-    });
+    this.obs.on("SceneTransitionStarted", () => this.bus.emit({ type: "transition", active: true }));
+    this.obs.on("SceneTransitionEnded", () => this.bus.emit({ type: "transition", active: false }));
     this.obs.on("InputVolumeChanged", ({ inputName, inputVolumeDb }) =>
       this.bus.emit({ type: "audioChannel", name: inputName, db: Math.max(-60, inputVolumeDb) }),
     );
     this.obs.on("InputMuteStateChanged", ({ inputName, inputMuted }) =>
       this.bus.emit({ type: "audioChannel", name: inputName, muted: inputMuted }),
+    );
+    this.obs.on("InputAudioMonitorTypeChanged", ({ inputName, monitorType }) =>
+      this.bus.emit({ type: "audioChannel", name: inputName, monitor: monitorFromObs(monitorType) }),
+    );
+    this.obs.on("InputAudioTracksChanged", ({ inputName, inputAudioTracks }) =>
+      this.bus.emit({
+        type: "audioChannel",
+        name: inputName,
+        stream: Boolean((inputAudioTracks as Record<string, boolean>)["1"]),
+      }),
     );
     this.obs.on("InputCreated", () => void this.refreshAudio());
     this.obs.on("InputRemoved", () => void this.refreshAudio());
@@ -76,14 +104,12 @@ export class ObsTransport implements Transport {
       else if (!outputActive) this.bus.emit({ type: "record", active: false });
     });
     this.obs.on("SceneItemEnableStateChanged", (data) => {
-      // Only mirror the configured DSK item, not every source in every scene.
-      if (
-        this.dskTarget &&
-        data.sceneName === this.dskTarget.scene &&
-        data.sceneItemId === this.dskTarget.id
-      ) {
-        this.bus.emit({ type: "dsk", on: data.sceneItemEnabled });
-      }
+      // Only mirror the configured DSK items, not every source in every scene.
+      this.dskItems.forEach((item, index) => {
+        if (item && data.sceneName === item.scene && data.sceneItemId === item.id) {
+          this.bus.emit({ type: "dsk", index, on: data.sceneItemEnabled });
+        }
+      });
     });
   }
 
@@ -95,8 +121,7 @@ export class ObsTransport implements Transport {
     const url = `ws://${this.options.host}:${this.options.port}`;
     try {
       await this.obs.connect(url, this.options.password || undefined, {
-        eventSubscriptions:
-          EventSubscription.All | EventSubscription.InputVolumeMeters,
+        eventSubscriptions: EventSubscription.All | EventSubscription.InputVolumeMeters,
         rpcVersion: 1,
       });
       try {
@@ -105,14 +130,11 @@ export class ObsTransport implements Transport {
       } catch {
         this.bus.emit({ type: "studioMode", enabled: false });
       }
-      const [scenes, transitions] = await Promise.all([
-        this.getScenes(),
-        this.getTransitions(),
-      ]);
+      const [scenes, transitions] = await Promise.all([this.getScenes(), this.getTransitions()]);
       this.bus.emit({ type: "scenes", scenes });
       this.bus.emit({ type: "transitions", transitions });
       this.bus.emit({ type: "status", status: "connected" });
-      await this.refreshScenes();
+      await this.resync();
       await this.refreshAudio();
       await this.refreshOutputs();
     } catch (error) {
@@ -125,25 +147,59 @@ export class ObsTransport implements Transport {
     }
   }
 
-  private async refreshScenes() {
+  async resync() {
     const program = await this.getCurrentProgramScene();
     if (program) this.bus.emit({ type: "programScene", scene: program });
     const preview = await this.getCurrentPreviewScene();
     if (preview) this.bus.emit({ type: "previewScene", scene: preview });
   }
 
+  /** MAIN audio = OBS "Desktop Audio" (global audio device), falling back to Mic/Aux. */
+  private async findMainAudio(): Promise<string | null> {
+    try {
+      const s = (await this.obs.call("GetSpecialInputs")) as Record<string, string | null>;
+      return s["desktop1"] ?? s["desktop2"] ?? s["mic1"] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private async refreshAudio() {
     try {
+      const main = await this.findMainAudio();
+      this.bus.emit({ type: "mainAudio", name: main });
       const { inputs } = await this.obs.call("GetInputList");
-      const channels = [];
-      for (const input of inputs) {
-        const name = String(input["inputName"]);
+      const names = inputs.map((input) => String(input["inputName"]));
+      // Global audio devices are not always listed — make sure MAIN is present.
+      if (main && !names.includes(main)) names.unshift(main);
+      const channels: AudioChannel[] = [];
+      for (const name of names) {
         try {
           const [{ inputVolumeDb }, { inputMuted }] = await Promise.all([
             this.obs.call("GetInputVolume", { inputName: name }),
             this.obs.call("GetInputMute", { inputName: name }),
           ]);
-          channels.push({ name, db: Math.max(-60, inputVolumeDb), muted: inputMuted });
+          let monitor: MonitorType = "none";
+          let stream = true;
+          try {
+            const m = await this.obs.call("GetInputAudioMonitorType", { inputName: name });
+            monitor = monitorFromObs(m.monitorType);
+          } catch {
+            /* ignore */
+          }
+          try {
+            const t = await this.obs.call("GetInputAudioTracks", { inputName: name });
+            stream = Boolean((t.inputAudioTracks as Record<string, boolean>)["1"]);
+          } catch {
+            /* ignore */
+          }
+          channels.push({
+            name,
+            db: Math.max(-60, inputVolumeDb),
+            muted: inputMuted,
+            monitor,
+            stream,
+          });
         } catch {
           /* not an audio input */
         }
@@ -180,6 +236,20 @@ export class ObsTransport implements Transport {
 
   async setInputMute(name: string, muted: boolean) {
     await this.obs.call("SetInputMute", { inputName: name, inputMuted: muted });
+  }
+
+  async setInputMonitor(name: string, monitor: MonitorType) {
+    await this.obs.call("SetInputAudioMonitorType", {
+      inputName: name,
+      monitorType: MONITOR_TO_OBS[monitor] as never,
+    });
+  }
+
+  async setInputStream(name: string, enabled: boolean) {
+    await this.obs.call("SetInputAudioTracks", {
+      inputName: name,
+      inputAudioTracks: { "1": enabled },
+    });
   }
 
   async setStreaming(on: boolean) {
@@ -290,17 +360,52 @@ export class ObsTransport implements Transport {
     }
   }
 
-  async toggleDSK(on: boolean, scene: string, source: string) {
-    if (!scene || !source) return;
+  private async resolveDsk(index: number, scene: string, source: string): Promise<DskItem> {
     const { sceneItemId } = await this.obs.call("GetSceneItemId", {
       sceneName: scene,
       sourceName: source,
     });
-    this.dskTarget = { scene, source, id: sceneItemId };
+    const item = { scene, source, id: sceneItemId };
+    this.dskItems[index] = item;
+    return item;
+  }
+
+  async toggleDSK(index: number, on: boolean, scene: string, source: string) {
+    if (!scene || !source) return;
+    const item = await this.resolveDsk(index, scene, source);
     await this.obs.call("SetSceneItemEnabled", {
-      sceneName: scene,
-      sceneItemId,
+      sceneName: item.scene,
+      sceneItemId: item.id,
       sceneItemEnabled: on,
     });
+  }
+
+  async readDSK(index: number, scene: string, source: string): Promise<boolean | null> {
+    if (!scene || !source) return null;
+    try {
+      const { id: sceneItemId } = await this.resolveDsk(index, scene, source);
+      const { sceneItemEnabled } = await this.obs.call("GetSceneItemEnabled", {
+        sceneName: scene,
+        sceneItemId,
+      });
+      return sceneItemEnabled;
+    } catch {
+      return null;
+    }
+  }
+
+  async getScreenshot(scene: string, width: number, height: number) {
+    try {
+      const res = await this.obs.call("GetSourceScreenshot", {
+        sourceName: scene,
+        imageFormat: "jpg",
+        imageWidth: width,
+        imageHeight: height,
+        imageCompressionQuality: 55,
+      });
+      return res.imageData;
+    } catch {
+      return null;
+    }
   }
 }

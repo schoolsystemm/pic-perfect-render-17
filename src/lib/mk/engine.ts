@@ -5,9 +5,25 @@
 import { loadConfig, saveConfig } from "./config";
 import { DemoTransport } from "./demo-transport";
 import type { Transport, TransportEvent } from "./transport";
-import { CAM_COUNT, DEFAULT_CONFIG, IDLE_OUTPUT, type OutputState, type CamIndex, type MkConfig, type SwitcherState } from "./types";
+import {
+  CAM_COUNT,
+  DEFAULT_CONFIG,
+  DSK_COUNT,
+  FADER_MAX,
+  FADER_MIN,
+  IDLE_OUTPUT,
+  type CamIndex,
+  type DskTarget,
+  type MkConfig,
+  type MonitorType,
+  type OutputState,
+  type SwitcherState,
+} from "./types";
 
 const RECONNECT_DELAY = 2500;
+const TBAR_SEND_INTERVAL = 25;
+const MONITOR_W = 640;
+const MONITOR_H = 360;
 
 function initialState(config: MkConfig): SwitcherState {
   return {
@@ -18,7 +34,7 @@ function initialState(config: MkConfig): SwitcherState {
     preview: null,
     programScene: null,
     previewScene: null,
-    dskActive: false,
+    dskActive: Array.from({ length: DSK_COUNT }, () => false),
     tBar: 0,
     transitioning: false,
     scenes: [],
@@ -26,9 +42,11 @@ function initialState(config: MkConfig): SwitcherState {
     studioMode: false,
     config,
     audio: [],
+    mainAudio: null,
     levels: {},
     stream: IDLE_OUTPUT,
     record: IDLE_OUTPUT,
+    notice: null,
   };
 }
 
@@ -39,12 +57,23 @@ function toOutput(active: boolean, paused = false, durationMs = 0): OutputState 
     : { active, paused, since: Date.now() - durationMs, baseMs: 0 };
 }
 
+const NEXT_MONITOR: Record<MonitorType, MonitorType> = {
+  none: "monitorOnly",
+  monitorOnly: "monitorAndOutput",
+  monitorAndOutput: "none",
+};
+
 export class SwitcherEngine {
   private state: SwitcherState = initialState(DEFAULT_CONFIG);
   private listeners = new Set<() => void>();
   private transport: Transport | null = null;
   private unsubscribeTransport: (() => void) | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  private animTimer: ReturnType<typeof setInterval> | null = null;
+  private tbarTimer: ReturnType<typeof setTimeout> | null = null;
+  private tbarPending: number | null = null;
+  private tbarHeld = false;
   private booted = false;
 
   /** Hydrate stored config on the client. Safe to call repeatedly. */
@@ -82,6 +111,12 @@ export class SwitcherEngine {
     this.set({ config });
     saveConfig(config);
     return config;
+  }
+
+  private notice(message: string) {
+    this.set({ notice: message });
+    if (this.noticeTimer) clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => this.set({ notice: null }), 3500);
   }
 
   // ---------------------------------------------------------------- mapping
@@ -147,25 +182,45 @@ export class SwitcherEngine {
     this.unsubscribeTransport = transport.subscribe(this.onTransportEvent);
     try {
       await transport.connect();
-      if (!demoMode) {
-        await transport.setTransition(this.state.config.transition).catch(() => {});
-        await transport
-          .setTransitionDuration(this.state.config.transitionDuration)
-          .catch(() => {});
-      }
+      await transport.setTransition(this.state.config.transition).catch(() => {});
+      await transport.setTransitionDuration(this.state.config.transitionDuration).catch(() => {});
+      await this.syncDsks();
     } catch {
       this.scheduleReconnect();
     }
+  }
+
+  /** Read the real on/off state of both DSK items from OBS. */
+  private async syncDsks() {
+    if (!this.transport || this.state.demo) return;
+    const active = [...this.state.dskActive];
+    for (let i = 0; i < DSK_COUNT; i++) {
+      const target = this.state.config.dsks[i];
+      if (!target?.source) continue;
+      const scene = target.scene || this.state.programScene || "";
+      const on = await this.transport.readDSK(i, scene, target.source);
+      if (on !== null) active[i] = on;
+    }
+    this.set({ dskActive: active });
   }
 
   async disconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     await this.teardown();
-    this.set({ status: "disconnected", statusMessage: "", audio: [], levels: {}, stream: IDLE_OUTPUT, record: IDLE_OUTPUT });
+    this.set({
+      status: "disconnected",
+      statusMessage: "",
+      audio: [],
+      mainAudio: null,
+      levels: {},
+      stream: IDLE_OUTPUT,
+      record: IDLE_OUTPUT,
+    });
   }
 
   private async teardown() {
+    this.stopAnim();
     this.unsubscribeTransport?.();
     this.unsubscribeTransport = null;
     if (this.transport) {
@@ -212,17 +267,33 @@ export class SwitcherEngine {
           preview: this.camForScene(event.scene),
         });
         break;
-      case "dsk":
-        this.set({ dskActive: event.on });
+      case "transition":
+        // The transport reports when a transition ends (auto take, OBS itself).
+        if (!event.active && !this.tbarHeld) this.finishTransition();
         break;
+      case "dsk": {
+        const dskActive = [...this.state.dskActive];
+        dskActive[event.index] = event.on;
+        this.set({ dskActive });
+        break;
+      }
       case "audio":
         this.set({ audio: event.channels });
+        break;
+      case "mainAudio":
+        this.set({ mainAudio: event.name });
         break;
       case "audioChannel":
         this.set({
           audio: this.state.audio.map((c) =>
             c.name === event.name
-              ? { ...c, db: event.db ?? c.db, muted: event.muted ?? c.muted }
+              ? {
+                  ...c,
+                  db: event.db ?? c.db,
+                  muted: event.muted ?? c.muted,
+                  monitor: event.monitor ?? c.monitor,
+                  stream: event.stream ?? c.stream,
+                }
               : c,
           ),
         });
@@ -248,7 +319,7 @@ export class SwitcherEngine {
     await this.transport.setPreviewScene(scene).catch(() => {});
   }
 
-  /** Direct-to-air override (long press / shift-click). */
+  /** Direct-to-air override (program bus). */
   async selectProgram(cam: CamIndex) {
     const scene = this.sceneForCam(cam);
     this.set({ program: cam, programScene: scene });
@@ -270,7 +341,7 @@ export class SwitcherEngine {
   // ------------------------------------------------------------------- audio
 
   async setAudioVolume(name: string, db: number) {
-    const clamped = Math.min(0, Math.max(-60, db));
+    const clamped = Math.min(FADER_MAX, Math.max(FADER_MIN, db));
     this.onTransportEvent({ type: "audioChannel", name, db: clamped });
     await this.transport?.setInputVolume(name, clamped).catch(() => {});
   }
@@ -282,6 +353,23 @@ export class SwitcherEngine {
     await this.transport?.setInputMute(name, !channel.muted).catch(() => {});
   }
 
+  /** Cycle headphone monitoring: OFF → MONITOR → MONITOR + OUTPUT. */
+  async cycleAudioMonitor(name: string) {
+    const channel = this.state.audio.find((c) => c.name === name);
+    if (!channel) return;
+    const monitor = NEXT_MONITOR[channel.monitor];
+    this.onTransportEvent({ type: "audioChannel", name, monitor });
+    await this.transport?.setInputMonitor(name, monitor).catch(() => {});
+  }
+
+  /** Include / exclude an input in the stream + record mix (audio track 1). */
+  async toggleAudioStream(name: string) {
+    const channel = this.state.audio.find((c) => c.name === name);
+    if (!channel) return;
+    this.onTransportEvent({ type: "audioChannel", name, stream: !channel.stream });
+    await this.transport?.setInputStream(name, !channel.stream).catch(() => {});
+  }
+
   setAudioFollowVideo(on: boolean) {
     this.updateConfig({ audioFollowVideo: on });
     this.applyAfv();
@@ -289,6 +377,7 @@ export class SwitcherEngine {
 
   /** Cam index an audio input belongs to: matches a mapped scene name or "CAM n". */
   audioCam(name: string): CamIndex | null {
+    if (name === this.state.mainAudio) return null;
     const lower = name.toLowerCase();
     for (let i = 0; i < CAM_COUNT; i++) {
       const scene = this.state.config.camScenes[i];
@@ -329,6 +418,8 @@ export class SwitcherEngine {
     await this.transport?.setRecordPaused(!this.state.record.paused).catch(() => {});
   }
 
+  // ------------------------------------------------------------- transitions
+
   private swapLocal() {
     const { program, preview, programScene, previewScene } = this.state;
     this.set({
@@ -336,46 +427,138 @@ export class SwitcherEngine {
       preview: program,
       programScene: previewScene,
       previewScene: programScene,
-      tBar: 0,
-      transitioning: false,
     });
     this.applyAfv();
   }
 
+  private stopAnim() {
+    if (this.animTimer) clearInterval(this.animTimer);
+    this.animTimer = null;
+    if (this.tbarTimer) clearTimeout(this.tbarTimer);
+    this.tbarTimer = null;
+    this.tbarPending = null;
+  }
+
+  /** Transition finished: reset the T-bar and re-read authoritative scenes. */
+  private finishTransition() {
+    this.stopAnim();
+    this.tbarHeld = false;
+    this.set({ tBar: 0, transitioning: false });
+    void this.transport?.resync().catch(() => {});
+  }
+
   async cut() {
     if (this.state.preview === null && !this.state.previewScene) return;
+    this.stopAnim();
+    this.tbarHeld = false;
+    this.set({ tBar: 0, transitioning: false });
     this.swapLocal();
     await this.transport?.performCut().catch(() => {});
+    setTimeout(() => void this.transport?.resync().catch(() => {}), 200);
   }
 
   async autoTake() {
     if (this.state.preview === null && !this.state.previewScene) return;
-    this.set({ transitioning: true });
+    if (this.state.transitioning) return;
+    const isCut = this.state.config.transition === "Cut";
+    const ms = isCut ? 0 : this.state.config.transitionDuration;
+    this.set({ transitioning: true, tBar: 0 });
+    if (ms > 0) {
+      // Animate the T-bar over the transition so the UI mirrors what OBS does.
+      const start = performance.now();
+      this.animTimer = setInterval(() => {
+        const t = Math.min(1, (performance.now() - start) / ms);
+        this.set({ tBar: t });
+        if (t >= 1 && this.animTimer) {
+          clearInterval(this.animTimer);
+          this.animTimer = null;
+          // Fallback in case the transport never reports the end of the transition.
+          setTimeout(() => {
+            if (this.state.transitioning) this.finishTransition();
+          }, 400);
+        }
+      }, 33);
+    }
     await this.transport?.performAutoTake().catch(() => {});
-    this.swapLocal();
+    if (ms === 0) this.finishTransition();
   }
 
+  private flushTBar = () => {
+    this.tbarTimer = null;
+    if (this.tbarPending === null) return;
+    const position = this.tbarPending;
+    this.tbarPending = null;
+    void this.transport?.setTBarPosition(position, false).catch(() => {});
+  };
+
+  /** Manual T-bar. `release` is true on pointer-up. */
   setTBar(position: number, release = false) {
-    const clamped = Math.min(1, Math.max(0, position));
-    this.set({ tBar: clamped, transitioning: clamped > 0 && clamped < 1 });
-    void this.transport?.setTBarPosition(clamped, release).catch(() => {});
-    if (release && clamped >= 1) {
-      this.swapLocal();
-    } else if (release && clamped <= 0) {
+    const p = Math.min(1, Math.max(0, position));
+    if (!release) {
+      this.tbarHeld = true;
+      this.set({ tBar: p, transitioning: p > 0 && p < 1 });
+      this.tbarPending = p;
+      if (!this.tbarTimer) this.tbarTimer = setTimeout(this.flushTBar, TBAR_SEND_INTERVAL);
+      return;
+    }
+    // Release: flush anything pending, then snap to an end stop when close.
+    if (this.tbarTimer) clearTimeout(this.tbarTimer);
+    this.tbarTimer = null;
+    this.tbarPending = null;
+    if (p >= 1) {
+      this.set({ tBar: 1, transitioning: true });
+      void this.transport
+        ?.setTBarPosition(1, true)
+        .catch(() => {})
+        .then(() => {
+          this.tbarHeld = false;
+          setTimeout(() => this.finishTransition(), 150);
+        });
+    } else if (p <= 0) {
+      void this.transport?.setTBarPosition(0, true).catch(() => {});
+      this.tbarHeld = false;
       this.set({ tBar: 0, transitioning: false });
+    } else {
+      // Left mid-way (like a hardware lever): keep the position, keep holding.
+      this.set({ tBar: p, transitioning: true });
+      void this.transport?.setTBarPosition(p, false).catch(() => {});
     }
   }
 
-  async toggleDSK() {
-    const next = !this.state.dskActive;
-    this.set({ dskActive: next });
-    const { dskScene, dskSource } = this.state.config;
-    await this.transport
-      ?.toggleDSK(next, dskScene || this.state.programScene || "", dskSource)
-      .catch(() => {});
+  // --------------------------------------------------------------------- DSK
+
+  async toggleDSK(index: number) {
+    const target = this.state.config.dsks[index];
+    if (!target || !target.source) {
+      this.notice(`DSK ${index + 1}: set a source in Settings → DSK`);
+      return;
+    }
+    if (!this.transport) {
+      this.notice("Not connected");
+      return;
+    }
+    const scene = target.scene || this.state.programScene || "";
+    if (!scene) {
+      this.notice(`DSK ${index + 1}: no scene on air yet`);
+      return;
+    }
+    const next = !this.state.dskActive[index];
+    const previous = this.state.dskActive[index];
+    const dskActive = [...this.state.dskActive];
+    dskActive[index] = next;
+    this.set({ dskActive });
+    try {
+      await this.transport.toggleDSK(index, !!next, scene, target.source);
+    } catch {
+      // Roll back the light if OBS rejected it (wrong scene / source name).
+      const rollback = [...this.state.dskActive];
+      rollback[index] = !!previous;
+      this.set({ dskActive: rollback });
+      this.notice(`DSK ${index + 1}: "${target.source}" not found in "${scene}"`);
+    }
   }
 
-  // ------------------------------------------------------------- transitions
+  // ---------------------------------------------------------------- settings
 
   async setTransition(name: string) {
     this.updateConfig({ transition: name });
@@ -387,8 +570,9 @@ export class SwitcherEngine {
     await this.transport?.setTransitionDuration(ms).catch(() => {});
   }
 
-  setDskTarget(patch: Partial<Pick<MkConfig, "dskScene" | "dskSource">>) {
-    this.updateConfig(patch);
+  setDskTarget(index: number, patch: Partial<DskTarget>) {
+    const dsks = this.state.config.dsks.map((d, i) => (i === index ? { ...d, ...patch } : d));
+    this.updateConfig({ dsks });
   }
 
   setShortcuts(shortcuts: MkConfig["shortcuts"]) {
@@ -398,6 +582,22 @@ export class SwitcherEngine {
   setAutoConnect(autoConnect: boolean) {
     this.updateConfig({ autoConnect });
   }
+
+  setLiveVideo(liveVideo: boolean) {
+    this.updateConfig({ liveVideo });
+  }
+
+  setMonitorFps(monitorFps: number) {
+    this.updateConfig({ monitorFps });
+  }
+
+  // ---------------------------------------------------------- monitor video
+
+  /** Real video frame (JPEG data-URI) for a scene. Stable reference for hooks. */
+  getScreenshot = async (scene: string): Promise<string | null> => {
+    if (!this.transport) return null;
+    return this.transport.getScreenshot(scene, MONITOR_W, MONITOR_H).catch(() => null);
+  };
 }
 
 export const engine = new SwitcherEngine();
