@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { useClock } from "@/components/mk/use-clock";
 import { camLabel, type CamIndex } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -9,9 +11,14 @@ interface MultiviewProps {
   previewScene: string | null;
   tBar: number;
   transitioning: boolean;
-  dskActive: boolean;
+  dskActive: boolean[];
   streaming: boolean;
   recording: boolean;
+  /** Real video: fetches a frame (data-URI) for a scene. */
+  liveVideo: boolean;
+  fps: number;
+  connected: boolean;
+  getFrame: (scene: string) => Promise<string | null>;
 }
 
 function timecode(now: number) {
@@ -21,35 +28,84 @@ function timecode(now: number) {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}:${p(Math.floor((d.getMilliseconds() / 1000) * 30))}`;
 }
 
+/** Polls OBS for frames of `scene`, one request at a time (never piles up). */
+function useFeed(
+  scene: string | null,
+  enabled: boolean,
+  fps: number,
+  getFrame: (scene: string) => Promise<string | null>,
+) {
+  const [frame, setFrame] = useState<{ scene: string; src: string } | null>(null);
+  useEffect(() => {
+    if (!enabled || !scene) {
+      setFrame(null);
+      return;
+    }
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const interval = 1000 / Math.max(1, fps);
+    const tick = async () => {
+      if (stopped) return;
+      const t0 = performance.now();
+      if (!document.hidden) {
+        const src = await getFrame(scene).catch(() => null);
+        if (stopped) return;
+        if (src) setFrame({ scene, src });
+      }
+      timer = setTimeout(() => void tick(), Math.max(0, interval - (performance.now() - t0)));
+    };
+    void tick();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [scene, enabled, fps, getFrame]);
+  // Never show a frame that belongs to a previous scene.
+  return frame && frame.scene === scene ? frame.src : null;
+}
+
 function Monitor({
   kind,
   cam,
   scene,
+  frame,
   children,
 }: {
   kind: "program" | "preview";
   cam: CamIndex | null;
   scene: string | null;
+  frame: string | null;
   children?: React.ReactNode;
 }) {
   return (
     <div
       className={cn(
-        "relative flex aspect-video min-h-0 flex-col overflow-hidden rounded-sm border-2 bg-bezel",
+        "relative flex aspect-video min-h-0 min-w-0 flex-col overflow-hidden rounded-sm border-2 bg-bezel",
         kind === "program" ? "border-program shadow-[var(--glow-program)]" : "border-preview",
       )}
     >
-      <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent_0,transparent_3px,var(--panel)_4px)] opacity-40" />
-      <div className="relative flex flex-1 flex-col items-center justify-center gap-1 p-2 text-center">
-        <span className="text-2xl font-bold tracking-[0.2em] text-foreground sm:text-4xl">
-          {cam === null ? "—" : camLabel(cam)}
+      {frame ? (
+        <img src={frame} alt={`${kind} video`} draggable={false} className="absolute inset-0 h-full w-full bg-black object-contain" />
+      ) : (
+        <>
+          <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent_0,transparent_3px,var(--panel)_4px)] opacity-40" />
+          <div className="relative flex flex-1 flex-col items-center justify-center gap-1 p-2 text-center">
+            <span className="text-2xl font-bold tracking-[0.2em] text-foreground sm:text-4xl">
+              {cam === null ? "—" : camLabel(cam)}
+            </span>
+            <span className="mk-label max-w-full truncate text-[10px]">{scene ?? "No scene"}</span>
+          </div>
+        </>
+      )}
+      {frame && (
+        <span className="absolute bottom-6 left-1 rounded-sm bg-black/60 px-1.5 font-mono text-[10px] text-foreground">
+          {cam === null ? scene : camLabel(cam)}
         </span>
-        <span className="mk-label max-w-full truncate text-[10px]">{scene ?? "No scene"}</span>
-      </div>
+      )}
       {children}
       <div
         className={cn(
-          "relative py-0.5 text-center text-[10px] font-bold tracking-[0.3em]",
+          "relative mt-auto py-0.5 text-center text-[10px] font-bold tracking-[0.3em]",
           kind === "program" ? "bg-program text-destructive-foreground" : "bg-preview text-primary-foreground",
         )}
       >
@@ -61,24 +117,31 @@ function Monitor({
 
 export function Multiview(props: MultiviewProps) {
   const now = useClock(33);
+  const live = props.liveVideo && props.connected;
+  const previewFrame = useFeed(props.previewScene, live, props.fps, props.getFrame);
+  const programFrame = useFeed(props.programScene, live, props.fps, props.getFrame);
+
   return (
     <section className="mk-panel grid grid-cols-2 gap-2 rounded-md p-2 sm:gap-3">
-      <Monitor kind="preview" cam={props.preview} scene={props.previewScene} />
-      <Monitor kind="program" cam={props.program} scene={props.programScene}>
-        <div className="absolute top-1 left-1 flex gap-1">
-          {props.streaming && (
-            <span className="mk-lit-program rounded-sm px-1.5 text-[9px] font-bold">ON AIR</span>
-          )}
+      <Monitor kind="preview" cam={props.preview} scene={props.previewScene} frame={previewFrame} />
+      <Monitor kind="program" cam={props.program} scene={props.programScene} frame={programFrame}>
+        <div className="absolute top-1 left-1 flex flex-wrap gap-1">
+          {props.streaming && <span className="mk-lit-program rounded-sm px-1.5 text-[9px] font-bold">ON AIR</span>}
           {props.recording && (
-            <span className="rounded-sm bg-program px-1.5 text-[9px] font-bold text-destructive-foreground animate-pulse">
-              ● REC
-            </span>
+            <span className="animate-pulse rounded-sm bg-program px-1.5 text-[9px] font-bold text-destructive-foreground">● REC</span>
           )}
-          {props.dskActive && (
-            <span className="mk-lit-amber rounded-sm px-1.5 text-[9px] font-bold">DSK</span>
+          {props.dskActive.map(
+            (on, i) =>
+              on && (
+                <span key={i} className="mk-lit-amber rounded-sm px-1.5 text-[9px] font-bold">
+                  DSK {i + 1}
+                </span>
+              ),
           )}
         </div>
-        <span className="absolute top-1 right-1 font-mono text-[10px] text-amber">{timecode(now)}</span>
+        <span className="absolute top-1 right-1 rounded-sm bg-black/50 px-1 font-mono text-[10px] text-amber">
+          {timecode(now)}
+        </span>
         {props.transitioning && (
           <div className="absolute inset-x-0 bottom-5 h-1 bg-led-off">
             <div className="h-full bg-amber" style={{ width: `${Math.round(props.tBar * 100)}%` }} />

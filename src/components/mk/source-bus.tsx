@@ -24,7 +24,7 @@ export function SourceBus({ kind, active, camScenes, onSelect }: SourceBusProps)
           {kind === "program" ? "On Air" : "Next"}
         </span>
       </header>
-      <div className="grid flex-1 grid-cols-4 gap-1.5 sm:grid-cols-8 sm:gap-2">
+      <div className="grid flex-1 grid-cols-4 gap-1.5 md:grid-cols-8 sm:gap-2">
         {Array.from({ length: CAM_COUNT }, (_, index) => (
           <BusButton
             key={index}

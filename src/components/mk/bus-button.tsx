@@ -17,7 +17,7 @@ export function BusButton({ label, scene, lit, onSelect }: BusButtonProps) {
         onSelect();
       }}
       className={cn(
-        "mk-button flex h-full min-h-[3.25rem] w-full flex-col items-center justify-center gap-0.5 rounded-sm px-1 py-1.5 sm:min-h-[4.5rem]",
+        "mk-button flex h-full min-h-[3.25rem] w-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-sm px-1 py-1.5 sm:min-h-[4.5rem]",
         lit === "program" && "mk-lit-program",
         lit === "preview" && "mk-lit-preview",
         !scene && "opacity-55",
