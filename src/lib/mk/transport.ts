@@ -51,6 +51,8 @@ export interface Transport {
   setStreaming(on: boolean): Promise<void>;
   setRecording(on: boolean): Promise<void>;
   setRecordPaused(paused: boolean): Promise<void>;
+  /** Names of the sources (scene items) inside a scene, for the DSK pickers. */
+  getSceneItems(scene: string): Promise<string[]>;
   /** JPEG data-URI snapshot of a scene, for the real-video monitors. */
   getScreenshot(scene: string, width: number, height: number): Promise<string | null>;
   /** Re-emit authoritative program / preview scenes. */

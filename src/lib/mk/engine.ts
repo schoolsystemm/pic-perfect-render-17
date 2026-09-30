@@ -260,6 +260,8 @@ export class SwitcherEngine {
           program: this.camForScene(event.scene),
         });
         this.applyAfv();
+        // DSK set to "current program" reads a different item in every scene.
+        if (this.state.config.dsks.some((d) => d.source && !d.scene)) void this.syncDsks();
         break;
       case "previewScene":
         this.set({
@@ -506,14 +508,25 @@ export class SwitcherEngine {
     this.tbarTimer = null;
     this.tbarPending = null;
     if (p >= 1) {
+      const oldProgram = this.state.programScene;
+      const oldPreview = this.state.previewScene;
       this.set({ tBar: 1, transitioning: true });
-      void this.transport
-        ?.setTBarPosition(1, true)
-        .catch(() => {})
-        .then(() => {
-          this.tbarHeld = false;
-          setTimeout(() => this.finishTransition(), 150);
-        });
+      void (async () => {
+        const t = this.transport;
+        await t?.setTBarPosition(1, true).catch(() => {});
+        if (t && !this.state.demo) {
+          await new Promise((r) => setTimeout(r, 500));
+          const now = await t.getCurrentProgramScene().catch(() => null);
+          // OBS ignored the T-bar completion → perform the take ourselves.
+          if (now && oldProgram && oldPreview && now === oldProgram && oldPreview !== oldProgram) {
+            await t.setTBarPosition(0, true).catch(() => {});
+            await t.setProgramScene(oldPreview).catch(() => {});
+            await t.setPreviewScene(oldProgram).catch(() => {});
+          }
+        }
+        this.tbarHeld = false;
+        this.finishTransition();
+      })();
     } else if (p <= 0) {
       void this.transport?.setTBarPosition(0, true).catch(() => {});
       this.tbarHeld = false;
@@ -529,7 +542,7 @@ export class SwitcherEngine {
 
   async toggleDSK(index: number) {
     const target = this.state.config.dsks[index];
-    if (!target || !target.source) {
+    if (!target || (!target.source && !this.state.demo)) {
       this.notice(`DSK ${index + 1}: set a source in Settings → DSK`);
       return;
     }
@@ -548,7 +561,7 @@ export class SwitcherEngine {
     dskActive[index] = next;
     this.set({ dskActive });
     try {
-      await this.transport.toggleDSK(index, !!next, scene, target.source);
+      await this.transport.toggleDSK(index, !!next, scene, target.source || `DSK ${index + 1}`);
     } catch {
       // Roll back the light if OBS rejected it (wrong scene / source name).
       const rollback = [...this.state.dskActive];
@@ -592,6 +605,11 @@ export class SwitcherEngine {
   }
 
   // ---------------------------------------------------------- monitor video
+
+  getSceneItems = async (scene: string): Promise<string[]> => {
+    if (!this.transport) return [];
+    return this.transport.getSceneItems(scene).catch(() => []);
+  };
 
   /** Real video frame (JPEG data-URI) for a scene. Stable reference for hooks. */
   getScreenshot = async (scene: string): Promise<string | null> => {

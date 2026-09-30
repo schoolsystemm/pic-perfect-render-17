@@ -22,6 +22,14 @@ function monitorFromObs(value: string | undefined): MonitorType {
   return "none";
 }
 
+const MAIN_KINDS = [
+  "wasapi_output_capture",
+  "pulse_output_capture",
+  "coreaudio_output_capture",
+  "sck_audio_capture",
+  "jack_output_capture",
+];
+
 interface DskItem {
   scene: string;
   source: string;
@@ -154,21 +162,28 @@ export class ObsTransport implements Transport {
     if (preview) this.bus.emit({ type: "previewScene", scene: preview });
   }
 
-  /** MAIN audio = OBS "Desktop Audio" (global audio device), falling back to Mic/Aux. */
-  private async findMainAudio(): Promise<string | null> {
+  /** MAIN audio = OBS "Desktop Audio" (global device), with fallbacks by kind / name. */
+  private async findMainAudio(inputs: Array<Record<string, unknown>>): Promise<string | null> {
+    let special: Record<string, string | null> = {};
     try {
-      const s = (await this.obs.call("GetSpecialInputs")) as Record<string, string | null>;
-      return s["desktop1"] ?? s["desktop2"] ?? s["mic1"] ?? null;
+      special = (await this.obs.call("GetSpecialInputs")) as Record<string, string | null>;
     } catch {
-      return null;
+      /* ignore */
     }
+    if (special["desktop1"]) return special["desktop1"];
+    if (special["desktop2"]) return special["desktop2"];
+    const byKind = inputs.find((i) => MAIN_KINDS.includes(String(i["inputKind"])));
+    if (byKind) return String(byKind["inputName"]);
+    const byName = inputs.find((i) => /desktop|master|main|program/i.test(String(i["inputName"])));
+    if (byName) return String(byName["inputName"]);
+    return special["mic1"] ?? null;
   }
 
   private async refreshAudio() {
     try {
-      const main = await this.findMainAudio();
-      this.bus.emit({ type: "mainAudio", name: main });
       const { inputs } = await this.obs.call("GetInputList");
+      const main = await this.findMainAudio(inputs as Array<Record<string, unknown>>);
+      this.bus.emit({ type: "mainAudio", name: main });
       const names = inputs.map((input) => String(input["inputName"]));
       // Global audio devices are not always listed — make sure MAIN is present.
       if (main && !names.includes(main)) names.unshift(main);
@@ -391,6 +406,16 @@ export class ObsTransport implements Transport {
       return sceneItemEnabled;
     } catch {
       return null;
+    }
+  }
+
+  async getSceneItems(scene: string) {
+    if (!scene) return [];
+    try {
+      const { sceneItems } = await this.obs.call("GetSceneItemList", { sceneName: scene });
+      return sceneItems.map((i) => String(i["sourceName"]));
+    } catch {
+      return [];
     }
   }
 

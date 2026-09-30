@@ -196,6 +196,10 @@ export class DemoTransport implements Transport {
     return null;
   }
 
+  async getSceneItems() {
+    return ["Lower Third", "Logo Bug", "Clock", "Score Bug"];
+  }
+
   async getScreenshot(scene: string) {
     return demoFrame(scene);
   }
