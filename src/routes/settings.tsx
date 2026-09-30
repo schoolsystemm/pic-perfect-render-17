@@ -3,7 +3,13 @@ import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
-import { CAM_COUNT, TRANSITION_DURATIONS, camLabel } from "@/lib/mk/types";
+import {
+  CAM_COUNT,
+  DSK_COUNT,
+  MONITOR_FPS_OPTIONS,
+  TRANSITION_DURATIONS,
+  camLabel,
+} from "@/lib/mk/types";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -176,33 +182,68 @@ function SettingsPage() {
           </div>
         </Section>
 
-        <Section title="DSK">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1">
-              <span className="mk-label">Scene containing graphics</span>
+        <Section title="DSK (Downstream Keyers)">
+          {Array.from({ length: DSK_COUNT }, (_, i) => (
+            <div key={i} className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1">
+                <span className="mk-label">DSK {i + 1} — scene containing graphics</span>
+                <select
+                  className={fieldClass}
+                  value={config.dsks[i]?.scene ?? ""}
+                  onChange={(e) => engine.setDskTarget(i, { scene: e.target.value })}
+                >
+                  <option value="">— current program —</option>
+                  {sceneOptions.map((scene) => (
+                    <option key={scene} value={scene}>
+                      {scene}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="mk-label">DSK {i + 1} — source name</span>
+                <input
+                  className={fieldClass}
+                  value={config.dsks[i]?.source ?? ""}
+                  placeholder={i === 0 ? "Lower Third" : "Logo Bug"}
+                  onChange={(e) => engine.setDskTarget(i, { source: e.target.value })}
+                />
+              </label>
+            </div>
+          ))}
+          <p className="font-mono text-[10px] text-muted-foreground">
+            The source must exist as an item inside the chosen scene. With “current program” it must exist in every
+            camera scene.
+          </p>
+        </Section>
+
+        <Section title="Monitors (real video)">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={`mk-button h-11 rounded-sm px-4 text-sm ${config.liveVideo ? "mk-lit-preview" : ""}`}
+              onClick={() => engine.setLiveVideo(!config.liveVideo)}
+            >
+              Live video {config.liveVideo ? "On" : "Off"}
+            </button>
+            <label className="flex items-center gap-2">
+              <span className="mk-label">Refresh</span>
               <select
-                className={fieldClass}
-                value={config.dskScene}
-                onChange={(e) => engine.setDskTarget({ dskScene: e.target.value })}
+                className={`${fieldClass} w-28`}
+                value={config.monitorFps}
+                onChange={(e) => engine.setMonitorFps(Number(e.target.value))}
               >
-                <option value="">— current program —</option>
-                {sceneOptions.map((scene) => (
-                  <option key={scene} value={scene}>
-                    {scene}
+                {MONITOR_FPS_OPTIONS.map((fps) => (
+                  <option key={fps} value={fps}>
+                    {fps} fps
                   </option>
                 ))}
               </select>
             </label>
-            <label className="grid gap-1">
-              <span className="mk-label">Source name</span>
-              <input
-                className={fieldClass}
-                value={config.dskSource}
-                placeholder="Lower Third"
-                onChange={(e) => engine.setDskTarget({ dskSource: e.target.value })}
-              />
-            </label>
           </div>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Frames come from OBS screenshots over the WebSocket. Lower the rate on slow Wi-Fi.
+          </p>
         </Section>
 
         <Section title="Transition">
@@ -242,7 +283,7 @@ function SettingsPage() {
         </Section>
 
         <Section title="Keyboard">
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-4">
             <label className="flex items-center gap-2">
               <span className="mk-label w-20">Cut</span>
               <input
@@ -268,13 +309,24 @@ function SettingsPage() {
               />
             </label>
             <label className="flex items-center gap-2">
-              <span className="mk-label w-20">DSK</span>
+              <span className="mk-label w-20">DSK 1</span>
               <input
                 className={fieldClass}
                 value={config.shortcuts.dsk}
                 maxLength={1}
                 onChange={(e) =>
                   engine.setShortcuts({ ...config.shortcuts, dsk: e.target.value })
+                }
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="mk-label w-20">DSK 2</span>
+              <input
+                className={fieldClass}
+                value={config.shortcuts.dsk2}
+                maxLength={1}
+                onChange={(e) =>
+                  engine.setShortcuts({ ...config.shortcuts, dsk2: e.target.value })
                 }
               />
             </label>

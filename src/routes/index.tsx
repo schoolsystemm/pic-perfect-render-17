@@ -66,7 +66,7 @@ function Switcher() {
       </div>
 
       <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 sm:flex-row sm:gap-3 sm:p-3 phone-land:flex-row phone-land:gap-2 phone-land:p-1.5">
-        <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-3 phone-land:gap-1.5">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 sm:gap-3 phone-land:gap-1.5">
           {show.multiview && (
             <div className="phone-land:hidden">
               <Multiview
@@ -79,6 +79,10 @@ function Switcher() {
                 dskActive={state.dskActive}
                 streaming={state.stream.active}
                 recording={state.record.active}
+                liveVideo={state.config.liveVideo}
+                fps={state.config.monitorFps}
+                connected={state.status === "connected"}
+                getFrame={engine.getScreenshot}
               />
             </div>
           )}
@@ -97,17 +101,20 @@ function Switcher() {
           {show.audio && (
             <AudioMixer
               channels={state.audio}
+              mainAudio={state.mainAudio}
               levels={state.levels}
               afv={state.config.audioFollowVideo}
               camOf={(name) => engine.audioCam(name)}
               onVolume={(name, db) => void engine.setAudioVolume(name, db)}
               onMute={(name) => void engine.toggleAudioMute(name)}
+              onMonitor={(name) => void engine.cycleAudioMonitor(name)}
+              onStream={(name) => void engine.toggleAudioStream(name)}
               onAfv={(on) => engine.setAudioFollowVideo(on)}
             />
           )}
         </div>
 
-        <div className="flex flex-col gap-2 sm:gap-3 phone-land:w-44 phone-land:gap-1.5">
+        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-60 sm:gap-3 phone-land:w-48 phone-land:gap-1.5">
           <OutputControls
             stream={state.stream}
             record={state.record}
@@ -117,10 +124,12 @@ function Switcher() {
           />
           <TransitionPanel
             dskActive={state.dskActive}
+            dsks={state.config.dsks}
             tBar={state.tBar}
+            transitioning={state.transitioning}
             transitionName={state.config.transition}
             duration={state.config.transitionDuration}
-            onDsk={() => void engine.toggleDSK()}
+            onDsk={(index) => void engine.toggleDSK(index)}
             onAutoTake={() => void engine.autoTake()}
             onCut={() => void engine.cut()}
             onTBarChange={(value) => engine.setTBar(value)}
@@ -128,6 +137,13 @@ function Switcher() {
           />
         </div>
       </main>
+      {state.notice && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-3">
+          <div className="mk-panel rounded-md border-amber px-3 py-2 font-mono text-xs text-amber">
+            {state.notice}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
