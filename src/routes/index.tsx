@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { AudioMixer } from "@/components/mk/audio-mixer";
+import { GraphicsPanel } from "@/components/mk/graphics-panel";
 import { Multiview } from "@/components/mk/multiview";
 import { OutputControls } from "@/components/mk/output-controls";
 import { ReconnectOverlay } from "@/components/mk/reconnect-overlay";
@@ -34,12 +35,13 @@ export const Route = createFileRoute("/")({
   component: Switcher,
 });
 
-type Panel = "multiview" | "audio";
+type Panel = "multiview" | "audio" | "graphics";
+const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", audio: "Audio", graphics: "Graphics" };
 
 function Switcher() {
   const state = useSwitcher();
   useShortcuts(state.config.shortcuts);
-  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, audio: true });
+  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, audio: true, graphics: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
 
   return (
@@ -53,14 +55,14 @@ function Switcher() {
       />
 
       <div className="flex gap-1.5 border-b border-border px-2 py-1 phone-land:py-0.5">
-        {(["multiview", "audio"] as Panel[]).map((p) => (
+        {(["multiview", "audio", "graphics"] as Panel[]).map((p) => (
           <button
             key={p}
             type="button"
             onClick={() => toggle(p)}
             className={cn("mk-button h-7 rounded-sm px-2 text-[10px]", show[p] && "text-foreground")}
           >
-            {p === "multiview" ? "Monitors" : "Audio"} {show[p] ? "▾" : "▸"}
+            {PANEL_LABEL[p]} {show[p] ? "▾" : "▸"}
           </button>
         ))}
       </div>
@@ -68,7 +70,7 @@ function Switcher() {
       <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 sm:flex-row sm:gap-3 sm:p-3 phone-land:flex-row phone-land:gap-2 phone-land:p-1.5">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 sm:gap-3 phone-land:gap-1.5">
           {show.multiview && (
-            <div className="phone-land:hidden">
+            <div className="shrink-0 phone-land:hidden">
               <Multiview
                 program={state.program}
                 preview={state.preview}
@@ -85,6 +87,7 @@ function Switcher() {
                 getFrame={engine.getScreenshot}
                 demo={state.demo}
                 graphics={state.config.graphics}
+                gfxActive={state.gfxActive}
               />
             </div>
           )}
@@ -100,6 +103,7 @@ function Switcher() {
             camScenes={state.config.camScenes}
             onSelect={(cam) => void engine.selectPreview(cam)}
           />
+          {show.graphics && <GraphicsPanel graphics={state.config.graphics} active={state.gfxActive} />}
           {show.audio && (
             <AudioMixer
               channels={state.audio}
