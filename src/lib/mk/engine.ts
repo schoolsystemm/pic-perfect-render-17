@@ -259,7 +259,7 @@ export class SwitcherEngine {
 
   private mergeOutput(
     prev: OutputState,
-    e: { active: boolean; paused?: boolean; durationMs?: number },
+    e: { active: boolean; paused?: boolean | undefined; durationMs?: number | undefined },
   ): OutputState {
     if (!e.active) return IDLE_OUTPUT;
     if (e.durationMs !== undefined) return toOutput(true, e.paused ?? false, e.durationMs);

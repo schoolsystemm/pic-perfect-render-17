@@ -14,8 +14,8 @@ export type TransportEvent =
   | { type: "audio"; channels: AudioChannel[] }
   | { type: "audioChannel"; name: string; db?: number; muted?: boolean }
   | { type: "levels"; levels: Record<string, number> }
-  | { type: "stream"; active: boolean; paused?: boolean; durationMs?: number }
-  | { type: "record"; active: boolean; paused?: boolean; durationMs?: number };
+  | { type: "stream"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
+  | { type: "record"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined };
 
 export interface Transport {
   connect(): Promise<void>;
