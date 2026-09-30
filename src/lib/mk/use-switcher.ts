@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { engine } from "./engine";
-import { DEFAULT_CONFIG, type SwitcherState } from "./types";
+import { DEFAULT_CONFIG, IDLE_OUTPUT, type SwitcherState } from "./types";
 
 const serverSnapshot: SwitcherState = {
   status: "disconnected",
@@ -18,6 +18,10 @@ const serverSnapshot: SwitcherState = {
   transitions: [],
   studioMode: false,
   config: DEFAULT_CONFIG,
+  audio: [],
+  levels: {},
+  stream: IDLE_OUTPUT,
+  record: IDLE_OUTPUT,
 };
 
 /** Subscribe to the control engine. Boots it on first client render. */

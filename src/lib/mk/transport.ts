@@ -1,7 +1,7 @@
 // Transport contract: the only surface the control engine uses to talk to a
 // mixer backend. OBS WebSocket 5.x and Demo Mode both implement it, and a
 // future hardware bridge can too.
-import type { ConnectionStatus } from "./types";
+import type { AudioChannel, ConnectionStatus } from "./types";
 
 export type TransportEvent =
   | { type: "status"; status: ConnectionStatus; message?: string }
@@ -10,7 +10,12 @@ export type TransportEvent =
   | { type: "dsk"; on: boolean }
   | { type: "scenes"; scenes: string[] }
   | { type: "transitions"; transitions: string[] }
-  | { type: "studioMode"; enabled: boolean };
+  | { type: "studioMode"; enabled: boolean }
+  | { type: "audio"; channels: AudioChannel[] }
+  | { type: "audioChannel"; name: string; db?: number; muted?: boolean }
+  | { type: "levels"; levels: Record<string, number> }
+  | { type: "stream"; active: boolean; paused?: boolean; durationMs?: number }
+  | { type: "record"; active: boolean; paused?: boolean; durationMs?: number };
 
 export interface Transport {
   connect(): Promise<void>;
@@ -27,6 +32,11 @@ export interface Transport {
   setTransitionDuration(ms: number): Promise<void>;
   setTBarPosition(position: number, release: boolean): Promise<void>;
   toggleDSK(on: boolean, scene: string, source: string): Promise<void>;
+  setInputVolume(name: string, db: number): Promise<void>;
+  setInputMute(name: string, muted: boolean): Promise<void>;
+  setStreaming(on: boolean): Promise<void>;
+  setRecording(on: boolean): Promise<void>;
+  setRecordPaused(paused: boolean): Promise<void>;
   subscribe(listener: (event: TransportEvent) => void): () => void;
 }
 
