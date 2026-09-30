@@ -194,6 +194,14 @@ export function AudioMixer(props: AudioMixerProps) {
               />
             ))}
           </div>
+          {!main && (
+            <div className="flex w-[5.25rem] shrink-0 flex-col items-center justify-center gap-1 rounded-sm border border-dashed border-program/60 p-1 text-center">
+              <span className="text-[10px] font-bold tracking-[0.2em] text-program">MAIN</span>
+              <span className="font-mono text-[8px] leading-tight text-engrave">
+                No Desktop Audio input found in OBS
+              </span>
+            </div>
+          )}
           {main && (
             <Strip
               channel={main}
