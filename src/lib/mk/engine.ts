@@ -5,7 +5,7 @@
 import { loadConfig, saveConfig } from "./config";
 import { DemoTransport } from "./demo-transport";
 import type { Transport, TransportEvent } from "./transport";
-import { CAM_COUNT, DEFAULT_CONFIG, IDLE_OUTPUT, type OutputState, camLabel, type CamIndex, type MkConfig, type SwitcherState } from "./types";
+import { CAM_COUNT, DEFAULT_CONFIG, IDLE_OUTPUT, type OutputState, type CamIndex, type MkConfig, type SwitcherState } from "./types";
 
 const RECONNECT_DELAY = 2500;
 
