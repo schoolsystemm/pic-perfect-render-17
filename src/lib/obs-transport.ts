@@ -2,7 +2,7 @@
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
-import { GFX_LOGO, GFX_LOWER, GFX_SCENE } from "./graphics";
+import { GFX_SCENE } from "./graphics";
 import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
 
 export interface ObsTransportOptions {
@@ -42,6 +42,7 @@ export class ObsTransport implements Transport {
   private bus = new EventBus();
   private manualClose = false;
   private lastMeter = 0;
+  private gfxIds = new Map<string, number>();
   private dskItems: (DskItem | null)[] = Array.from({ length: DSK_COUNT }, () => null);
 
   constructor(private options: ObsTransportOptions) {
@@ -80,6 +81,7 @@ export class ObsTransport implements Transport {
         type: "audioChannel",
         name: inputName,
         stream: Boolean((inputAudioTracks as Record<string, boolean>)["1"]),
+        pre: Boolean((inputAudioTracks as Record<string, boolean>)["2"]),
       }),
     );
     this.obs.on("InputCreated", () => void this.refreshAudio());
@@ -113,6 +115,11 @@ export class ObsTransport implements Transport {
       else if (!outputActive) this.bus.emit({ type: "record", active: false });
     });
     this.obs.on("SceneItemEnableStateChanged", (data) => {
+      if (data.sceneName === GFX_SCENE) {
+        for (const [name, id] of this.gfxIds) {
+          if (id === data.sceneItemId) this.bus.emit({ type: "gfx", name, on: data.sceneItemEnabled });
+        }
+      }
       // Only mirror the configured DSK items, not every source in every scene.
       this.dskItems.forEach((item, index) => {
         if (item && data.sceneName === item.scene && data.sceneItemId === item.id) {
@@ -197,6 +204,7 @@ export class ObsTransport implements Transport {
           ]);
           let monitor: MonitorType = "none";
           let stream = true;
+          let pre = true;
           try {
             const m = await this.obs.call("GetInputAudioMonitorType", { inputName: name });
             monitor = monitorFromObs(m.monitorType);
@@ -206,6 +214,7 @@ export class ObsTransport implements Transport {
           try {
             const t = await this.obs.call("GetInputAudioTracks", { inputName: name });
             stream = Boolean((t.inputAudioTracks as Record<string, boolean>)["1"]);
+            pre = Boolean((t.inputAudioTracks as Record<string, boolean>)["2"]);
           } catch {
             /* ignore */
           }
@@ -215,6 +224,7 @@ export class ObsTransport implements Transport {
             muted: inputMuted,
             monitor,
             stream,
+            pre,
           });
         } catch {
           /* not an audio input */
@@ -265,6 +275,13 @@ export class ObsTransport implements Transport {
     await this.obs.call("SetInputAudioTracks", {
       inputName: name,
       inputAudioTracks: { "1": enabled },
+    });
+  }
+
+  async setInputPre(name: string, enabled: boolean) {
+    await this.obs.call("SetInputAudioTracks", {
+      inputName: name,
+      inputAudioTracks: { "2": enabled },
     });
   }
 
@@ -444,7 +461,7 @@ export class ObsTransport implements Transport {
     }
   }
 
-  async syncGraphics(camScenes: string[], logoUrl: string, lowerUrl: string) {
+  async syncGraphics(targetScenes: string[], layers: { name: string; url: string }[], removeFrom: string[] = []) {
     let w = 1920;
     let h = 1080;
     try {
@@ -456,21 +473,140 @@ export class ObsTransport implements Transport {
     }
     const scenes = await this.getScenes();
     if (!scenes.includes(GFX_SCENE)) await this.obs.call("CreateScene", { sceneName: GFX_SCENE });
-    await this.ensureBrowser(GFX_SCENE, GFX_LOWER, lowerUrl, w, h);
-    await this.ensureBrowser(GFX_SCENE, GFX_LOGO, logoUrl, w, h);
-    // Nest the graphics scene on top of every camera scene (once).
-    for (const cam of camScenes) {
-      if (cam === GFX_SCENE) continue;
+    for (const layer of layers) await this.ensureBrowser(GFX_SCENE, layer.name, layer.url, w, h);
+    this.gfxIds.clear();
+    // Nest the graphics scene into the chosen scene(s) only (once each).
+    for (const scene of targetScenes) {
+      if (scene === GFX_SCENE) continue;
       try {
-        await this.obs.call("GetSceneItemId", { sceneName: cam, sourceName: GFX_SCENE });
+        await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: GFX_SCENE });
       } catch {
         await this.obs.call("CreateSceneItem", {
-          sceneName: cam,
+          sceneName: scene,
           sourceName: GFX_SCENE,
           sceneItemEnabled: true,
         });
       }
     }
+    // Optional clean-up of copies left in other scenes by older versions.
+    for (const scene of removeFrom) {
+      if (scene === GFX_SCENE || targetScenes.includes(scene)) continue;
+      try {
+        const { sceneItemId } = await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: GFX_SCENE });
+        await this.obs.call("RemoveSceneItem", { sceneName: scene, sceneItemId });
+      } catch {
+        /* not nested there */
+      }
+    }
+  }
+
+  private soundScene: string | null = null;
+
+  async playSound(scene: string, dataUrl: string) {
+    const name = "MK Audio";
+    const html = `<!doctype html><html><body style="margin:0;background:transparent"><audio id="a" autoplay src="${dataUrl}"></audio><script>var a=document.getElementById('a');a.play().catch(function(){})</script><!-- ${Date.now()} --></body></html>`;
+    const settings = {
+      url: `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
+      width: 16,
+      height: 16,
+      reroute_audio: true, // sound goes through OBS's own mixer
+      shutdown: false,
+    };
+    let exists = true;
+    try {
+      await this.obs.call("GetInputSettings", { inputName: name });
+    } catch {
+      exists = false;
+    }
+    // Only ever sits in ONE scene, and only while playing.
+    if (this.soundScene && this.soundScene !== scene) await this.stopSound();
+    if (exists) {
+      await this.obs.call("SetInputSettings", { inputName: name, inputSettings: settings, overlay: true });
+      try {
+        await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: name });
+      } catch {
+        await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: name, sceneItemEnabled: true });
+      }
+    } else {
+      await this.obs.call("CreateInput", {
+        sceneName: scene,
+        inputName: name,
+        inputKind: "browser_source",
+        inputSettings: settings,
+        sceneItemEnabled: true,
+      });
+    }
+    this.soundScene = scene;
+  }
+
+  async stopSound() {
+    const name = "MK Audio";
+    try {
+      await this.obs.call("SetInputSettings", {
+        inputName: name,
+        inputSettings: { url: "about:blank" },
+        overlay: true,
+      });
+    } catch {
+      /* source not created yet */
+    }
+    if (this.soundScene) {
+      try {
+        const { sceneItemId } = await this.obs.call("GetSceneItemId", {
+          sceneName: this.soundScene,
+          sourceName: name,
+        });
+        await this.obs.call("RemoveSceneItem", { sceneName: this.soundScene, sceneItemId });
+      } catch {
+        /* already gone */
+      }
+      this.soundScene = null;
+    }
+  }
+
+  private async gfxItemId(name: string): Promise<number> {
+    const cached = this.gfxIds.get(name);
+    if (cached !== undefined) return cached;
+    const { sceneItemId } = await this.obs.call("GetSceneItemId", {
+      sceneName: GFX_SCENE,
+      sourceName: name,
+    });
+    this.gfxIds.set(name, sceneItemId);
+    return sceneItemId;
+  }
+
+  async setGraphicVisible(name: string, on: boolean) {
+    const sceneItemId = await this.gfxItemId(name);
+    await this.obs.call("SetSceneItemEnabled", {
+      sceneName: GFX_SCENE,
+      sceneItemId,
+      sceneItemEnabled: on,
+    });
+  }
+
+  async readGraphics(names: string[]) {
+    const out: Record<string, boolean> = {};
+    for (const name of names) {
+      try {
+        const sceneItemId = await this.gfxItemId(name);
+        const { sceneItemEnabled } = await this.obs.call("GetSceneItemEnabled", {
+          sceneName: GFX_SCENE,
+          sceneItemId,
+        });
+        out[name] = sceneItemEnabled;
+      } catch {
+        /* layer not created yet */
+      }
+    }
+    return out;
+  }
+
+  async updateGraphic(name: string, url: string) {
+    await this.obs.call("SetInputSettings", {
+      inputName: name,
+      inputSettings: { url },
+      overlay: true,
+    });
   }
 
   async getSceneItems(scene: string) {
