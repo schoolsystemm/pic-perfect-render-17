@@ -69,7 +69,7 @@ function Strip({
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-col items-center gap-1 rounded-sm p-1",
+        "flex shrink-0 flex-col items-center gap-1 rounded-sm p-1 [&>*]:shrink-0",
         main ? "w-[5.25rem] border border-program/60 bg-program-dim/30" : "w-[4.5rem] bg-bezel/40",
       )}
     >
@@ -91,7 +91,7 @@ function Strip({
         {fmt(c.db)} dB{cam !== null ? ` · C${cam + 1}` : ""}
       </span>
 
-      <div className="flex h-28 items-stretch gap-1.5">
+      <div className="flex h-28 shrink-0 items-stretch gap-1.5">
         <Meter db={c.muted ? -100 : level} wide={main} />
         {main && <Meter db={c.muted ? -100 : level - 0.7} wide />}
         <input
@@ -160,7 +160,7 @@ export function AudioMixer(props: AudioMixerProps) {
   const levelOf = (c: AudioChannel) => levels[c.name] ?? -100;
 
   return (
-    <section className="mk-panel flex min-h-0 flex-col rounded-md p-2">
+    <section className="mk-panel flex shrink-0 flex-col rounded-md p-2">
       <header className="mb-2 flex items-center gap-2">
         <span className="mk-label text-foreground">Audio</span>
         <span className="mk-label hidden text-[9px] sm:block">MON = headphones · STR = stream / record</span>
@@ -176,8 +176,8 @@ export function AudioMixer(props: AudioMixerProps) {
       {channels.length === 0 ? (
         <p className="mk-label py-4 text-center text-[10px]">No audio inputs</p>
       ) : (
-        <div className="flex min-h-0 gap-2">
-          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
+        <div className="flex items-stretch gap-2">
+          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-hidden pb-1">
             {inputs.length === 0 && (
               <p className="mk-label self-center px-2 text-[10px]">No other inputs</p>
             )}
