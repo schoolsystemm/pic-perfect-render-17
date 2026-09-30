@@ -1,0 +1,5 @@
+# Minimal MediaMTX config for MK VISION "Listen".
+# OBS publishes audio to path "mk" over SRT; phones/laptops play it over WebRTC.
+# Ports: SRT 8890 (UDP, OBS -> server), WebRTC 8889 (TCP) + 8189 (UDP) (server -> devices).
+paths:
+  mk:
