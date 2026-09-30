@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import {
@@ -41,6 +41,60 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 const fieldClass =
   "h-10 w-full rounded-sm border border-border bg-input px-2 font-mono text-sm text-foreground outline-none focus:border-ring";
+
+function DskSourceField({
+  index,
+  scene,
+  fallbackScene,
+  value,
+}: {
+  index: number;
+  scene: string;
+  fallbackScene: string;
+  value: string;
+}) {
+  const [items, setItems] = useState<string[]>([]);
+  const target = scene || fallbackScene;
+  useEffect(() => {
+    let off = false;
+    if (!target) {
+      setItems([]);
+      return;
+    }
+    void engine.getSceneItems(target).then((list) => {
+      if (!off) setItems(list);
+    });
+    return () => {
+      off = true;
+    };
+  }, [target]);
+
+  if (items.length === 0) {
+    return (
+      <input
+        className={fieldClass}
+        value={value}
+        placeholder={index === 0 ? "Lower Third" : "Logo Bug"}
+        onChange={(e) => engine.setDskTarget(index, { source: e.target.value })}
+      />
+    );
+  }
+  return (
+    <select
+      className={fieldClass}
+      value={value}
+      onChange={(e) => engine.setDskTarget(index, { source: e.target.value })}
+    >
+      <option value="">— none —</option>
+      {items.map((name) => (
+        <option key={name} value={name}>
+          {name}
+        </option>
+      ))}
+      {value && !items.includes(value) && <option value={value}>{value} (not in scene)</option>}
+    </select>
+  );
+}
 
 function SettingsPage() {
   const state = useSwitcher();
@@ -202,17 +256,24 @@ function SettingsPage() {
               </label>
               <label className="grid gap-1">
                 <span className="mk-label">DSK {i + 1} — source name</span>
-                <input
-                  className={fieldClass}
+                <DskSourceField
+                  index={i}
+                  scene={config.dsks[i]?.scene ?? ""}
+                  fallbackScene={state.programScene ?? ""}
                   value={config.dsks[i]?.source ?? ""}
-                  placeholder={i === 0 ? "Lower Third" : "Logo Bug"}
-                  onChange={(e) => engine.setDskTarget(i, { source: e.target.value })}
                 />
               </label>
             </div>
           ))}
+          {config.dsks[0]?.source &&
+            config.dsks[0].source === config.dsks[1]?.source &&
+            config.dsks[0].scene === config.dsks[1]?.scene && (
+              <p className="font-mono text-[10px] text-amber">
+                DSK 1 and DSK 2 are set to the same source — pick a different one for DSK 2.
+              </p>
+            )}
           <p className="font-mono text-[10px] text-muted-foreground">
-            The source must exist as an item inside the chosen scene. With “current program” it must exist in every
+            Each DSK toggles its own source. The source must exist as an item inside the chosen scene. With “current program” it must exist in every
             camera scene.
           </p>
         </Section>
