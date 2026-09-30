@@ -45,11 +45,11 @@ export class DemoTransport implements Transport {
   private autoTimer: ReturnType<typeof setTimeout> | null = null;
   private meterTimer: ReturnType<typeof setInterval> | null = null;
   private channels: AudioChannel[] = [
-    { name: MAIN, db: -6, muted: false, monitor: "monitorOnly", stream: true },
-    { name: "CAM 1 Mic", db: -6, muted: false, monitor: "none", stream: true },
-    { name: "CAM 2 Mic", db: -8, muted: false, monitor: "none", stream: true },
-    { name: "Presenter Lav", db: -4, muted: false, monitor: "monitorOnly", stream: true },
-    { name: "Music Bed", db: -18, muted: true, monitor: "none", stream: true },
+    { name: MAIN, db: -6, muted: false, monitor: "monitorOnly", stream: true, pre: true },
+    { name: "CAM 1 Mic", db: -6, muted: false, monitor: "none", stream: true, pre: true },
+    { name: "CAM 2 Mic", db: -8, muted: false, monitor: "none", stream: true, pre: true },
+    { name: "Presenter Lav", db: -4, muted: false, monitor: "monitorOnly", stream: true, pre: true },
+    { name: "Music Bed", db: -18, muted: true, monitor: "none", stream: true, pre: true },
   ];
   private record = false;
 
@@ -102,6 +102,12 @@ export class DemoTransport implements Transport {
     const c = this.channels.find((x) => x.name === name);
     if (c) c.stream = enabled;
     this.bus.emit({ type: "audioChannel", name, stream: enabled });
+  }
+
+  async setInputPre(name: string, enabled: boolean) {
+    const c = this.channels.find((x) => x.name === name);
+    if (c) c.pre = enabled;
+    this.bus.emit({ type: "audioChannel", name, pre: enabled });
   }
 
   async setStreaming(on: boolean) {
@@ -196,6 +202,8 @@ export class DemoTransport implements Transport {
     return null;
   }
 
+  async playSound() {}
+  async stopSound() {}
   async syncGraphics() {}
   async setGraphicVisible() {}
   async updateGraphic() {}

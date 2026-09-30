@@ -22,6 +22,7 @@ export type TransportEvent =
       muted?: boolean;
       monitor?: MonitorType;
       stream?: boolean;
+      pre?: boolean;
     }
   | { type: "levels"; levels: Record<string, number> }
   | { type: "stream"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
@@ -47,8 +48,10 @@ export interface Transport {
   setInputVolume(name: string, db: number): Promise<void>;
   setInputMute(name: string, muted: boolean): Promise<void>;
   setInputMonitor(name: string, monitor: MonitorType): Promise<void>;
-  /** Send an input to the stream / record mix (audio track 1). */
+  /** Send an input to the FINAL mix — stream + record (audio track 1). */
   setInputStream(name: string, enabled: boolean): Promise<void>;
+  /** Send an input to the pre-listen mix (audio track 2). */
+  setInputPre(name: string, enabled: boolean): Promise<void>;
   setStreaming(on: boolean): Promise<void>;
   setRecording(on: boolean): Promise<void>;
   setRecordPaused(paused: boolean): Promise<void>;
@@ -67,6 +70,10 @@ export interface Transport {
   readGraphics(names: string[]): Promise<Record<string, boolean>>;
   /** Push new HTML into a layer without touching its visibility. */
   updateGraphic(name: string, url: string): Promise<void>;
+  /** Play a short audio clip on air (browser source in the given scene). */
+  playSound(scene: string, dataUrl: string): Promise<void>;
+  /** Stop the clip and take the sound source out of its scene. */
+  stopSound(): Promise<void>;
   /** Names of the sources (scene items) inside a scene, for the DSK pickers. */
   getSceneItems(scene: string): Promise<string[]>;
   /** JPEG data-URI snapshot of a scene, for the real-video monitors. */

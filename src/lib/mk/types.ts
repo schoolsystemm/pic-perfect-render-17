@@ -30,23 +30,37 @@ export interface LowerPreset {
 
 export interface GraphicsConfig {
   logo: { image: string | null; pos: Corner; size: number };
-  lower: { name: string; title: string; accent: string; presets: LowerPreset[] };
-  ticker: { text: string; label: string; speed: number; accent: string };
-  clock: { pos: Corner; seconds: boolean; h24: boolean };
-  badge: { text: string; pos: Corner; color: string };
+  lower: { name: string; title: string; accent: string; presets: LowerPreset[]; size: number };
+  ticker: {
+    text: string;
+    label: string;
+    speed: number;
+    accent: string;
+    /** Bar height + text size, percent (100 = default). */
+    size: number;
+    /** Which way the text scrolls. */
+    direction: "left" | "right";
+    /** Bar sits on the bottom or the top of the picture. */
+    pos: "bottom" | "top";
+  };
+  clock: { pos: Corner; seconds: boolean; h24: boolean; size: number };
+  badge: { text: string; pos: Corner; color: string; size: number };
 }
 
 export const DEFAULT_GRAPHICS: GraphicsConfig = {
   logo: { image: null, pos: "tr", size: 12 },
-  lower: { name: "Guest Name", title: "Title / Role", accent: "#f5a623", presets: [] },
+  lower: { name: "Guest Name", title: "Title / Role", accent: "#f5a623", presets: [], size: 100 },
   ticker: {
     text: "Welcome to the broadcast — stay tuned for more",
     label: "LIVE",
     speed: 22,
     accent: "#e5322d",
+    size: 100,
+    direction: "left",
+    pos: "bottom",
   },
-  clock: { pos: "br", seconds: true, h24: true },
-  badge: { text: "LIVE", pos: "tl", color: "#e5322d" },
+  clock: { pos: "br", seconds: true, h24: true, size: 100 },
+  badge: { text: "LIVE", pos: "tl", color: "#e5322d", size: 100 },
 };
 
 export const IDLE_GFX: Record<GfxId, boolean> = {
@@ -79,6 +93,10 @@ export interface MkConfig {
   graphics: GraphicsConfig;
   /** The ONE scene the MK Graphics scene is nested into ("" = not nested anywhere). */
   graphicsScene: string;
+  /** WHEP address of the audio feed from the OBS PC ("" = derive from the OBS host). */
+  listenUrl: string;
+  /** Volume of the audio feed on this device, 0..1. */
+  listenVolume: number;
 }
 
 export interface Shortcuts {
@@ -124,6 +142,8 @@ export const DEFAULT_CONFIG: MkConfig = {
   monitorFps: 10,
   graphics: DEFAULT_GRAPHICS,
   graphicsScene: "",
+  listenUrl: "",
+  listenVolume: 1,
 };
 
 export interface SwitcherState {
@@ -163,8 +183,10 @@ export interface AudioChannel {
   muted: boolean;
   /** OBS monitoring mode (what the operator hears locally). */
   monitor: MonitorType;
-  /** Sent to the stream / record mix (OBS audio track 1). */
+  /** Goes to the FINAL mix: what YouTube / the recording get (OBS audio track 1). */
   stream: boolean;
+  /** Goes to the PRE-LISTEN mix (OBS audio track 2) — what the Listen button plays. */
+  pre: boolean;
 }
 
 export interface OutputState {

@@ -93,6 +93,8 @@ export function loadConfig(): MkConfig {
       shortcuts: { ...DEFAULT_SHORTCUTS, ...(parsed.shortcuts ?? {}) },
       graphics: mergeGraphics(parsed.graphics),
       graphicsScene: typeof parsed.graphicsScene === "string" ? parsed.graphicsScene : "",
+      listenUrl: typeof parsed.listenUrl === "string" ? parsed.listenUrl : "",
+      listenVolume: typeof parsed.listenVolume === "number" ? parsed.listenVolume : 1,
     };
   } catch {
     return DEFAULT_CONFIG;

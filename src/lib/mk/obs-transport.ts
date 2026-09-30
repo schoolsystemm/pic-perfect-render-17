@@ -81,6 +81,7 @@ export class ObsTransport implements Transport {
         type: "audioChannel",
         name: inputName,
         stream: Boolean((inputAudioTracks as Record<string, boolean>)["1"]),
+        pre: Boolean((inputAudioTracks as Record<string, boolean>)["2"]),
       }),
     );
     this.obs.on("InputCreated", () => void this.refreshAudio());
@@ -203,6 +204,7 @@ export class ObsTransport implements Transport {
           ]);
           let monitor: MonitorType = "none";
           let stream = true;
+          let pre = true;
           try {
             const m = await this.obs.call("GetInputAudioMonitorType", { inputName: name });
             monitor = monitorFromObs(m.monitorType);
@@ -212,6 +214,7 @@ export class ObsTransport implements Transport {
           try {
             const t = await this.obs.call("GetInputAudioTracks", { inputName: name });
             stream = Boolean((t.inputAudioTracks as Record<string, boolean>)["1"]);
+            pre = Boolean((t.inputAudioTracks as Record<string, boolean>)["2"]);
           } catch {
             /* ignore */
           }
@@ -221,6 +224,7 @@ export class ObsTransport implements Transport {
             muted: inputMuted,
             monitor,
             stream,
+            pre,
           });
         } catch {
           /* not an audio input */
@@ -271,6 +275,13 @@ export class ObsTransport implements Transport {
     await this.obs.call("SetInputAudioTracks", {
       inputName: name,
       inputAudioTracks: { "1": enabled },
+    });
+  }
+
+  async setInputPre(name: string, enabled: boolean) {
+    await this.obs.call("SetInputAudioTracks", {
+      inputName: name,
+      inputAudioTracks: { "2": enabled },
     });
   }
 
@@ -486,6 +497,70 @@ export class ObsTransport implements Transport {
       } catch {
         /* not nested there */
       }
+    }
+  }
+
+  private soundScene: string | null = null;
+
+  async playSound(scene: string, dataUrl: string) {
+    const name = "MK Audio";
+    const html = `<!doctype html><html><body style="margin:0;background:transparent"><audio id="a" autoplay src="${dataUrl}"></audio><script>var a=document.getElementById('a');a.play().catch(function(){})</script><!-- ${Date.now()} --></body></html>`;
+    const settings = {
+      url: `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
+      width: 16,
+      height: 16,
+      reroute_audio: true, // sound goes through OBS's own mixer
+      shutdown: false,
+    };
+    let exists = true;
+    try {
+      await this.obs.call("GetInputSettings", { inputName: name });
+    } catch {
+      exists = false;
+    }
+    // Only ever sits in ONE scene, and only while playing.
+    if (this.soundScene && this.soundScene !== scene) await this.stopSound();
+    if (exists) {
+      await this.obs.call("SetInputSettings", { inputName: name, inputSettings: settings, overlay: true });
+      try {
+        await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: name });
+      } catch {
+        await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: name, sceneItemEnabled: true });
+      }
+    } else {
+      await this.obs.call("CreateInput", {
+        sceneName: scene,
+        inputName: name,
+        inputKind: "browser_source",
+        inputSettings: settings,
+        sceneItemEnabled: true,
+      });
+    }
+    this.soundScene = scene;
+  }
+
+  async stopSound() {
+    const name = "MK Audio";
+    try {
+      await this.obs.call("SetInputSettings", {
+        inputName: name,
+        inputSettings: { url: "about:blank" },
+        overlay: true,
+      });
+    } catch {
+      /* source not created yet */
+    }
+    if (this.soundScene) {
+      try {
+        const { sceneItemId } = await this.obs.call("GetSceneItemId", {
+          sceneName: this.soundScene,
+          sourceName: name,
+        });
+        await this.obs.call("RemoveSceneItem", { sceneName: this.soundScene, sceneItemId });
+      } catch {
+        /* already gone */
+      }
+      this.soundScene = null;
     }
   }
 

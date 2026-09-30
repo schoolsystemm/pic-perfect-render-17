@@ -62,11 +62,6 @@ function toOutput(active: boolean, paused = false, durationMs = 0): OutputState 
     : { active, paused, since: Date.now() - durationMs, baseMs: 0 };
 }
 
-const NEXT_MONITOR: Record<MonitorType, MonitorType> = {
-  none: "monitorOnly",
-  monitorOnly: "monitorAndOutput",
-  monitorAndOutput: "none",
-};
 
 export class SwitcherEngine {
   private state: SwitcherState = initialState(DEFAULT_CONFIG);
@@ -306,6 +301,7 @@ export class SwitcherEngine {
                   muted: event.muted ?? c.muted,
                   monitor: event.monitor ?? c.monitor,
                   stream: event.stream ?? c.stream,
+                  pre: event.pre ?? c.pre,
                 }
               : c,
           ),
@@ -366,21 +362,38 @@ export class SwitcherEngine {
     await this.transport?.setInputMute(name, !channel.muted).catch(() => {});
   }
 
-  /** Cycle headphone monitoring: OFF → MONITOR → MONITOR + OUTPUT. */
+  /** Hear this input on the OBS PC's own headphones / monitoring device (on or off). */
   async cycleAudioMonitor(name: string) {
     const channel = this.state.audio.find((c) => c.name === name);
     if (!channel) return;
-    const monitor = NEXT_MONITOR[channel.monitor];
+    const monitor: MonitorType = channel.monitor === "none" ? "monitorAndOutput" : "none";
     this.onTransportEvent({ type: "audioChannel", name, monitor });
     await this.transport?.setInputMonitor(name, monitor).catch(() => {});
   }
 
-  /** Include / exclude an input in the stream + record mix (audio track 1). */
+  /** Send / remove an input to the FINAL mix — YouTube + recording (audio track 1). */
   async toggleAudioStream(name: string) {
     const channel = this.state.audio.find((c) => c.name === name);
     if (!channel) return;
     this.onTransportEvent({ type: "audioChannel", name, stream: !channel.stream });
     await this.transport?.setInputStream(name, !channel.stream).catch(() => {});
+  }
+
+  /** Send / remove an input to the PRE-LISTEN mix (audio track 2, played by Listen). */
+  async toggleAudioPre(name: string) {
+    const channel = this.state.audio.find((c) => c.name === name);
+    if (!channel) return;
+    this.onTransportEvent({ type: "audioChannel", name, pre: !channel.pre });
+    await this.transport?.setInputPre(name, !channel.pre).catch(() => {});
+  }
+
+  /** Hear the whole final mix in pre-listen: PRE on for every input that is on MAIN. */
+  async hearFinalInPre(on: boolean) {
+    for (const c of this.state.audio) {
+      if (!c.stream || c.pre === on) continue;
+      this.onTransportEvent({ type: "audioChannel", name: c.name, pre: on });
+      await this.transport?.setInputPre(c.name, on).catch(() => {});
+    }
   }
 
   setAudioFollowVideo(on: boolean) {
@@ -697,6 +710,40 @@ export class SwitcherEngine {
     } catch (error) {
       this.notice(`Graphics save failed: ${error instanceof Error ? error.message : "unknown error"}`);
     }
+  }
+
+  // ------------------------------------------------------------------ sounds
+
+  /** Send a clip to OBS on the scene that is on air now. Returns true if it started. */
+  async airSound(dataUrl: string): Promise<boolean> {
+    if (this.state.demo) {
+      this.notice("Demo: the sound would play on air");
+      return true;
+    }
+    if (!this.transport) {
+      this.notice("Not connected to OBS — CUE still works");
+      return false;
+    }
+    const scene = this.state.programScene;
+    if (!scene) {
+      this.notice("No scene on air yet");
+      return false;
+    }
+    try {
+      await this.transport.playSound(scene, dataUrl);
+      return true;
+    } catch (error) {
+      this.notice(`Sound failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      return false;
+    }
+  }
+
+  async stopAirSound() {
+    await this.transport?.stopSound().catch(() => {});
+  }
+
+  setListen(patch: Partial<Pick<MkConfig, "listenUrl" | "listenVolume">>) {
+    this.updateConfig(patch);
   }
 
   setLiveVideo(liveVideo: boolean) {
