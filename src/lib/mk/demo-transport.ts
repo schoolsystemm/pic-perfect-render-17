@@ -28,7 +28,6 @@ export class DemoTransport implements Transport {
     { name: "Music Bed", db: -18, muted: true },
     { name: "Desktop Audio", db: -12, muted: false },
   ];
-  private stream = false;
   private record = false;
   private recordPaused = false;
 
@@ -68,7 +67,6 @@ export class DemoTransport implements Transport {
   }
 
   async setStreaming(on: boolean) {
-    this.stream = on;
     this.bus.emit({ type: "stream", active: on, durationMs: 0 });
   }
 
