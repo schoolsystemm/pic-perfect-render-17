@@ -5,7 +5,7 @@
 import { loadConfig, saveConfig } from "./config";
 import { DemoTransport } from "./demo-transport";
 import type { Transport, TransportEvent } from "./transport";
-import { CAM_COUNT, DEFAULT_CONFIG, type CamIndex, type MkConfig, type SwitcherState } from "./types";
+import { CAM_COUNT, DEFAULT_CONFIG, IDLE_OUTPUT, type OutputState, camLabel, type CamIndex, type MkConfig, type SwitcherState } from "./types";
 
 const RECONNECT_DELAY = 2500;
 
@@ -25,7 +25,18 @@ function initialState(config: MkConfig): SwitcherState {
     transitions: [],
     studioMode: false,
     config,
+    audio: [],
+    levels: {},
+    stream: IDLE_OUTPUT,
+    record: IDLE_OUTPUT,
   };
+}
+
+function toOutput(active: boolean, paused = false, durationMs = 0): OutputState {
+  if (!active) return IDLE_OUTPUT;
+  return paused
+    ? { active, paused, since: null, baseMs: durationMs }
+    : { active, paused, since: Date.now() - durationMs, baseMs: 0 };
 }
 
 export class SwitcherEngine {
@@ -151,7 +162,7 @@ export class SwitcherEngine {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     await this.teardown();
-    this.set({ status: "disconnected", statusMessage: "" });
+    this.set({ status: "disconnected", statusMessage: "", audio: [], levels: {}, stream: IDLE_OUTPUT, record: IDLE_OUTPUT });
   }
 
   private async teardown() {
@@ -193,6 +204,7 @@ export class SwitcherEngine {
           programScene: event.scene,
           program: this.camForScene(event.scene),
         });
+        this.applyAfv();
         break;
       case "previewScene":
         this.set({
@@ -202,6 +214,27 @@ export class SwitcherEngine {
         break;
       case "dsk":
         this.set({ dskActive: event.on });
+        break;
+      case "audio":
+        this.set({ audio: event.channels });
+        break;
+      case "audioChannel":
+        this.set({
+          audio: this.state.audio.map((c) =>
+            c.name === event.name
+              ? { ...c, db: event.db ?? c.db, muted: event.muted ?? c.muted }
+              : c,
+          ),
+        });
+        break;
+      case "levels":
+        this.set({ levels: { ...this.state.levels, ...event.levels } });
+        break;
+      case "stream":
+        this.set({ stream: this.mergeOutput(this.state.stream, event) });
+        break;
+      case "record":
+        this.set({ record: this.mergeOutput(this.state.record, event) });
         break;
     }
   };
@@ -219,8 +252,81 @@ export class SwitcherEngine {
   async selectProgram(cam: CamIndex) {
     const scene = this.sceneForCam(cam);
     this.set({ program: cam, programScene: scene });
+    this.applyAfv();
     if (!scene || !this.transport) return;
     await this.transport.setProgramScene(scene).catch(() => {});
+  }
+
+  private mergeOutput(
+    prev: OutputState,
+    e: { active: boolean; paused?: boolean; durationMs?: number },
+  ): OutputState {
+    if (!e.active) return IDLE_OUTPUT;
+    if (e.durationMs !== undefined) return toOutput(true, e.paused ?? false, e.durationMs);
+    const elapsed = prev.baseMs + (prev.since ? Date.now() - prev.since : 0);
+    return toOutput(true, e.paused ?? false, prev.active ? elapsed : 0);
+  }
+
+  // ------------------------------------------------------------------- audio
+
+  async setAudioVolume(name: string, db: number) {
+    const clamped = Math.min(0, Math.max(-60, db));
+    this.onTransportEvent({ type: "audioChannel", name, db: clamped });
+    await this.transport?.setInputVolume(name, clamped).catch(() => {});
+  }
+
+  async toggleAudioMute(name: string) {
+    const channel = this.state.audio.find((c) => c.name === name);
+    if (!channel) return;
+    this.onTransportEvent({ type: "audioChannel", name, muted: !channel.muted });
+    await this.transport?.setInputMute(name, !channel.muted).catch(() => {});
+  }
+
+  setAudioFollowVideo(on: boolean) {
+    this.updateConfig({ audioFollowVideo: on });
+    this.applyAfv();
+  }
+
+  /** Cam index an audio input belongs to: matches a mapped scene name or "CAM n". */
+  audioCam(name: string): CamIndex | null {
+    const lower = name.toLowerCase();
+    for (let i = 0; i < CAM_COUNT; i++) {
+      const scene = this.state.config.camScenes[i];
+      if (scene && lower === scene.toLowerCase()) return i;
+      if (new RegExp(`^(cam|camera)\\s*${i + 1}\\b`).test(lower)) return i;
+    }
+    return null;
+  }
+
+  private applyAfv() {
+    if (!this.state.config.audioFollowVideo) return;
+    const program = this.state.program;
+    for (const channel of this.state.audio) {
+      const cam = this.audioCam(channel.name);
+      if (cam === null) continue;
+      const shouldMute = cam !== program;
+      if (channel.muted !== shouldMute) {
+        this.onTransportEvent({ type: "audioChannel", name: channel.name, muted: shouldMute });
+        void this.transport?.setInputMute(channel.name, shouldMute).catch(() => {});
+      }
+    }
+  }
+
+  // ----------------------------------------------------------------- outputs
+
+  async toggleStream() {
+    const next = !this.state.stream.active;
+    await this.transport?.setStreaming(next).catch(() => {});
+  }
+
+  async toggleRecord() {
+    const next = !this.state.record.active;
+    await this.transport?.setRecording(next).catch(() => {});
+  }
+
+  async toggleRecordPause() {
+    if (!this.state.record.active) return;
+    await this.transport?.setRecordPaused(!this.state.record.paused).catch(() => {});
   }
 
   private swapLocal() {
@@ -233,6 +339,7 @@ export class SwitcherEngine {
       tBar: 0,
       transitioning: false,
     });
+    this.applyAfv();
   }
 
   async cut() {

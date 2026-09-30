@@ -23,6 +23,8 @@ export interface MkConfig {
   demoMode: boolean;
   autoConnect: boolean;
   shortcuts: Shortcuts;
+  /** Audio follows video: cam-named audio inputs unmute when their CAM is on air. */
+  audioFollowVideo: boolean;
 }
 
 export interface Shortcuts {
@@ -54,6 +56,7 @@ export const DEFAULT_CONFIG: MkConfig = {
   demoMode: true,
   autoConnect: false,
   shortcuts: DEFAULT_SHORTCUTS,
+  audioFollowVideo: false,
 };
 
 export interface SwitcherState {
@@ -72,6 +75,29 @@ export interface SwitcherState {
   transitions: string[];
   studioMode: boolean;
   config: MkConfig;
+  audio: AudioChannel[];
+  /** Peak level in dB per input name (fast-changing telemetry). */
+  levels: Record<string, number>;
+  stream: OutputState;
+  record: OutputState;
 }
+
+export interface AudioChannel {
+  name: string;
+  /** Fader in dB, -60..0 (-60 = -inf). */
+  db: number;
+  muted: boolean;
+}
+
+export interface OutputState {
+  active: boolean;
+  paused: boolean;
+  /** Epoch ms when the running clock started (null when stopped/paused). */
+  since: number | null;
+  /** Elapsed ms accumulated before `since`. */
+  baseMs: number;
+}
+
+export const IDLE_OUTPUT: OutputState = { active: false, paused: false, since: null, baseMs: 0 };
 
 export const camLabel = (index: CamIndex) => `CAM ${index + 1}`;
