@@ -1,5 +1,5 @@
 import { TBar } from "@/components/mk/t-bar";
-import { DSK_COUNT, type DskTarget } from "@/lib/mk/types";
+import { DSK_COUNT, RATE_BUTTONS, type DskTarget } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 interface TransitionPanelProps {
@@ -9,6 +9,9 @@ interface TransitionPanelProps {
   transitioning: boolean;
   transitionName: string;
   duration: number;
+  transitions: string[];
+  onTransition: (name: string) => void;
+  onDuration: (ms: number) => void;
   onDsk: (index: number) => void;
   onAutoTake: () => void;
   onCut: () => void;
@@ -23,6 +26,9 @@ export function TransitionPanel({
   transitioning,
   transitionName,
   duration,
+  transitions,
+  onTransition,
+  onDuration,
   onDsk,
   onAutoTake,
   onCut,
@@ -56,6 +62,37 @@ export function TransitionPanel({
             </span>
           </button>
         ))}
+      </div>
+
+      {/* Transition type + rate (speed) */}
+      <div className="grid gap-1.5">
+        <select
+          value={transitionName}
+          onChange={(e) => onTransition(e.target.value)}
+          aria-label="Transition type"
+          className="h-8 w-full min-w-0 rounded-sm border border-border bg-input px-1.5 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+        >
+          {(transitions.length ? transitions : ["Cut", "Fade", "Fade to Color", "Swipe"]).map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <div className="grid grid-cols-5 gap-1" role="group" aria-label="Transition rate">
+          {RATE_BUTTONS.map((ms) => (
+            <button
+              key={ms}
+              type="button"
+              onClick={() => onDuration(ms)}
+              className={cn(
+                "mk-button h-8 min-w-0 rounded-sm px-0 font-mono text-[10px]",
+                duration === ms && "mk-lit-amber",
+              )}
+            >
+              {(ms / 1000).toFixed(1)}s
+            </button>
+          ))}
+        </div>
       </div>
 
       <button
