@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
 
 import { fileToLogo, GFX_LAYERS } from "@/lib/mk/graphics";
@@ -62,7 +63,7 @@ export function GraphicsPanel({ graphics: g, active }: GraphicsPanelProps) {
     <section className="mk-panel shrink-0 rounded-md p-2">
       <header className="mb-2 flex items-center gap-2">
         <span className="mk-label text-foreground">Graphics</span>
-        <span className="mk-label hidden text-[9px] sm:block">Independent of DSK 1 / 2</span>
+        <Link to="/graphics" className="mk-button ml-auto flex h-7 items-center rounded-sm px-2 text-[10px]">Graphics studio</Link>
       </header>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         <Card id="logo" active={active.logo}>
