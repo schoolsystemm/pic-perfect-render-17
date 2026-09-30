@@ -137,7 +137,7 @@ export class ObsTransport implements Transport {
       const { inputs } = await this.obs.call("GetInputList");
       const channels = [];
       for (const input of inputs) {
-        const name = String(input.inputName);
+        const name = String(input["inputName"]);
         try {
           const [{ inputVolumeDb }, { inputMuted }] = await Promise.all([
             this.obs.call("GetInputVolume", { inputName: name }),
@@ -206,12 +206,12 @@ export class ObsTransport implements Transport {
 
   async getScenes() {
     const { scenes } = await this.obs.call("GetSceneList");
-    return scenes.map((scene) => String(scene.sceneName)).reverse();
+    return scenes.map((scene) => String(scene["sceneName"])).reverse();
   }
 
   async getTransitions() {
     const { transitions } = await this.obs.call("GetSceneTransitionList");
-    return transitions.map((t) => String(t.transitionName));
+    return transitions.map((t) => String(t["transitionName"]));
   }
 
   async getCurrentProgramScene() {
