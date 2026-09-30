@@ -8,6 +8,7 @@ export type TransportEvent =
   | { type: "programScene"; scene: string }
   | { type: "previewScene"; scene: string }
   | { type: "dsk"; index: number; on: boolean }
+  | { type: "gfx"; name: string; on: boolean }
   | { type: "scenes"; scenes: string[] }
   | { type: "transitions"; transitions: string[] }
   | { type: "studioMode"; enabled: boolean }
@@ -51,8 +52,14 @@ export interface Transport {
   setStreaming(on: boolean): Promise<void>;
   setRecording(on: boolean): Promise<void>;
   setRecordPaused(paused: boolean): Promise<void>;
-  /** Create / update the MK Graphics scene (logo + lower third) and nest it in every cam scene. */
-  syncGraphics(camScenes: string[], logoUrl: string, lowerUrl: string): Promise<void>;
+  /** Create / update the MK Graphics scene (one browser source per layer) and nest it in every cam scene. */
+  syncGraphics(camScenes: string[], layers: { name: string; url: string }[]): Promise<void>;
+  /** Show / hide one graphics layer (independent of the DSKs). */
+  setGraphicVisible(name: string, on: boolean): Promise<void>;
+  /** Current on/off state of each named layer that exists in OBS. */
+  readGraphics(names: string[]): Promise<Record<string, boolean>>;
+  /** Push new HTML into a layer without touching its visibility. */
+  updateGraphic(name: string, url: string): Promise<void>;
   /** Names of the sources (scene items) inside a scene, for the DSK pickers. */
   getSceneItems(scene: string): Promise<string[]>;
   /** JPEG data-URI snapshot of a scene, for the real-video monitors. */

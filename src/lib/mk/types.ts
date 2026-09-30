@@ -19,24 +19,42 @@ export interface DskTarget {
   source: string;
 }
 
+export type Corner = "tl" | "tr" | "bl" | "br";
+export type GfxId = "logo" | "lower" | "ticker" | "clock" | "badge";
+export const GFX_IDS: GfxId[] = ["logo", "lower", "ticker", "clock", "badge"];
+
+export interface LowerPreset {
+  name: string;
+  title: string;
+}
+
 export interface GraphicsConfig {
-  /** Logo as a PNG data URL (null = none). */
-  logo: string | null;
-  logoPos: "tl" | "tr" | "bl" | "br";
-  /** Logo width as % of the screen. */
-  logoSize: number;
-  lowerName: string;
-  lowerTitle: string;
-  accent: string;
+  logo: { image: string | null; pos: Corner; size: number };
+  lower: { name: string; title: string; accent: string; presets: LowerPreset[] };
+  ticker: { text: string; label: string; speed: number; accent: string };
+  clock: { pos: Corner; seconds: boolean; h24: boolean };
+  badge: { text: string; pos: Corner; color: string };
 }
 
 export const DEFAULT_GRAPHICS: GraphicsConfig = {
-  logo: null,
-  logoPos: "tr",
-  logoSize: 12,
-  lowerName: "Guest Name",
-  lowerTitle: "Title / Role",
-  accent: "#f5a623",
+  logo: { image: null, pos: "tr", size: 12 },
+  lower: { name: "Guest Name", title: "Title / Role", accent: "#f5a623", presets: [] },
+  ticker: {
+    text: "Welcome to the broadcast — stay tuned for more",
+    label: "LIVE",
+    speed: 22,
+    accent: "#e5322d",
+  },
+  clock: { pos: "br", seconds: true, h24: true },
+  badge: { text: "LIVE", pos: "tl", color: "#e5322d" },
+};
+
+export const IDLE_GFX: Record<GfxId, boolean> = {
+  logo: false,
+  lower: false,
+  ticker: false,
+  clock: false,
+  badge: false,
 };
 
 export interface MkConfig {
@@ -116,6 +134,8 @@ export interface SwitcherState {
   previewScene: string | null;
   /** DSK 1 / DSK 2 on-air flags. */
   dskActive: boolean[];
+  /** Built-in graphics on/off (independent of the DSKs). */
+  gfxActive: Record<GfxId, boolean>;
   tBar: number; // 0..1
   transitioning: boolean;
   scenes: string[];

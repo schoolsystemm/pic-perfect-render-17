@@ -1,4 +1,5 @@
 // Local-only configuration persistence. OBS credentials never leave the device.
+import { GFX_SCENE } from "./graphics";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -7,12 +8,64 @@ import {
   DEFAULT_SHORTCUTS,
   DSK_COUNT,
   type DskTarget,
+  type GraphicsConfig,
   type MkConfig,
 } from "./types";
 
 const STORAGE_KEY = "mkvision.config.v1";
 
-type Stored = Partial<MkConfig> & { dskScene?: string; dskSource?: string };
+type Stored = Omit<Partial<MkConfig>, "graphics"> & {
+  dskScene?: string;
+  dskSource?: string;
+  graphics?: unknown;
+};
+
+interface LooseGraphics {
+  // Older single-logo / single-lower-third format
+  logo?: unknown;
+  logoPos?: GraphicsConfig["logo"]["pos"];
+  logoSize?: number;
+  lowerName?: string;
+  lowerTitle?: string;
+  accent?: string;
+  // Current format
+  lower?: Partial<GraphicsConfig["lower"]>;
+  ticker?: Partial<GraphicsConfig["ticker"]>;
+  clock?: Partial<GraphicsConfig["clock"]>;
+  badge?: Partial<GraphicsConfig["badge"]>;
+}
+
+function mergeGraphics(raw: unknown): GraphicsConfig {
+  const D = DEFAULT_GRAPHICS;
+  const r = (raw ?? {}) as LooseGraphics;
+  if (r.logoPos !== undefined || r.lowerName !== undefined || typeof r.logo === "string") {
+    return {
+      ...D,
+      logo: {
+        image: typeof r.logo === "string" ? r.logo : null,
+        pos: r.logoPos ?? D.logo.pos,
+        size: r.logoSize ?? D.logo.size,
+      },
+      lower: {
+        ...D.lower,
+        name: r.lowerName ?? D.lower.name,
+        title: r.lowerTitle ?? D.lower.title,
+        accent: r.accent ?? D.lower.accent,
+      },
+    };
+  }
+  return {
+    logo: { ...D.logo, ...((r.logo ?? {}) as Partial<GraphicsConfig["logo"]>) },
+    lower: {
+      ...D.lower,
+      ...(r.lower ?? {}),
+      presets: Array.isArray(r.lower?.presets) ? r.lower.presets : [],
+    },
+    ticker: { ...D.ticker, ...(r.ticker ?? {}) },
+    clock: { ...D.clock, ...(r.clock ?? {}) },
+    badge: { ...D.badge, ...(r.badge ?? {}) },
+  };
+}
 
 export function loadConfig(): MkConfig {
   if (typeof window === "undefined") return DEFAULT_CONFIG;
@@ -27,6 +80,8 @@ export function loadConfig(): MkConfig {
     // Migrate the old single-DSK fields into DSK 1.
     const dsks: DskTarget[] = Array.from({ length: DSK_COUNT }, (_, i) => {
       const stored = parsed.dsks?.[i];
+      // DSKs are no longer used for the built-in graphics — free any that were.
+      if (stored?.scene === GFX_SCENE) return { scene: "", source: "" };
       if (stored) return { scene: stored.scene ?? "", source: stored.source ?? "" };
       if (i === 0 && (parsed.dskScene || parsed.dskSource)) {
         return { scene: parsed.dskScene ?? "", source: parsed.dskSource ?? "" };
@@ -39,7 +94,7 @@ export function loadConfig(): MkConfig {
       camScenes,
       dsks,
       shortcuts: { ...DEFAULT_SHORTCUTS, ...(parsed.shortcuts ?? {}) },
-      graphics: { ...DEFAULT_GRAPHICS, ...(parsed.graphics ?? {}) },
+      graphics: mergeGraphics(parsed.graphics),
     };
   } catch {
     return DEFAULT_CONFIG;

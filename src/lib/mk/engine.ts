@@ -4,7 +4,7 @@
 // exact same functions later.
 import { loadConfig, saveConfig } from "./config";
 import { DemoTransport } from "./demo-transport";
-import { GFX_LOGO, GFX_LOWER, GFX_SCENE, logoUrl, lowerThirdUrl } from "./graphics";
+import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import type { Transport, TransportEvent } from "./transport";
 import {
   CAM_COUNT,
@@ -12,9 +12,11 @@ import {
   DSK_COUNT,
   FADER_MAX,
   FADER_MIN,
+  IDLE_GFX,
   IDLE_OUTPUT,
   type CamIndex,
   type DskTarget,
+  type GfxId,
   type GraphicsConfig,
   type MkConfig,
   type MonitorType,
@@ -37,6 +39,7 @@ function initialState(config: MkConfig): SwitcherState {
     programScene: null,
     previewScene: null,
     dskActive: Array.from({ length: DSK_COUNT }, () => false),
+    gfxActive: IDLE_GFX,
     tBar: 0,
     transitioning: false,
     scenes: [],
@@ -187,6 +190,7 @@ export class SwitcherEngine {
       await transport.setTransition(this.state.config.transition).catch(() => {});
       await transport.setTransitionDuration(this.state.config.transitionDuration).catch(() => {});
       await this.syncDsks();
+      await this.syncGfx();
     } catch {
       this.scheduleReconnect();
     }
@@ -279,6 +283,11 @@ export class SwitcherEngine {
         const dskActive = [...this.state.dskActive];
         dskActive[event.index] = event.on;
         this.set({ dskActive });
+        break;
+      }
+      case "gfx": {
+        const id = gfxIdByName(event.name);
+        if (id) this.set({ gfxActive: { ...this.state.gfxActive, [id]: event.on } });
         break;
       }
       case "audio":
@@ -598,11 +607,69 @@ export class SwitcherEngine {
     this.updateConfig({ autoConnect });
   }
 
-  setGraphics(patch: Partial<GraphicsConfig>) {
-    this.updateConfig({ graphics: { ...this.state.config.graphics, ...patch } });
+  // ---------------------------------------------------------------- graphics
+  // Built-in graphics are separate from the DSKs: each layer has its own
+  // on/off, its own content, and its own OBS browser source.
+
+  private gfxTimers: Partial<Record<GfxId, ReturnType<typeof setTimeout>>> = {};
+
+  private async syncGfx() {
+    if (!this.transport || this.state.demo) return;
+    const found = await this.transport.readGraphics(GFX_LAYERS.map((l) => l.name)).catch(() => ({}));
+    const next = { ...this.state.gfxActive };
+    for (const layer of GFX_LAYERS) {
+      const on = (found as Record<string, boolean>)[layer.name];
+      if (on !== undefined) next[layer.id] = on;
+    }
+    this.set({ gfxActive: next });
   }
 
-  /** Build / refresh the logo + lower third inside OBS and point DSK 1 / DSK 2 at them. */
+  /** Edit one layer's content / style. Live-updates OBS when the layer exists. */
+  setGraphic<K extends GfxId>(id: K, patch: Partial<GraphicsConfig[K]>) {
+    const g = this.state.config.graphics;
+    this.updateConfig({ graphics: { ...g, [id]: { ...g[id], ...patch } } as GraphicsConfig });
+    if (!this.transport || this.state.demo) return;
+    const pending = this.gfxTimers[id];
+    if (pending) clearTimeout(pending);
+    this.gfxTimers[id] = setTimeout(() => {
+      const url = layerUrl(id, this.state.config.graphics);
+      void this.transport?.updateGraphic(gfxName(id), url).catch(() => {});
+    }, 400);
+  }
+
+  /** Take a graphics layer to air / off air. */
+  async toggleGraphic(id: GfxId) {
+    if (!this.transport) {
+      this.notice("Not connected");
+      return;
+    }
+    const next = !this.state.gfxActive[id];
+    this.set({ gfxActive: { ...this.state.gfxActive, [id]: next } });
+    try {
+      await this.transport.setGraphicVisible(gfxName(id), next);
+    } catch {
+      this.set({ gfxActive: { ...this.state.gfxActive, [id]: !next } });
+      this.notice("Graphics not set up in OBS yet — Settings → Graphics → Set up");
+    }
+  }
+
+  applyLowerPreset(index: number) {
+    const preset = this.state.config.graphics.lower.presets[index];
+    if (preset) this.setGraphic("lower", { name: preset.name, title: preset.title });
+  }
+
+  addLowerPreset() {
+    const { lower } = this.state.config.graphics;
+    if (!lower.name.trim() || lower.presets.length >= 12) return;
+    this.setGraphic("lower", { presets: [...lower.presets, { name: lower.name, title: lower.title }] });
+  }
+
+  removeLowerPreset(index: number) {
+    const { lower } = this.state.config.graphics;
+    this.setGraphic("lower", { presets: lower.presets.filter((_, i) => i !== index) });
+  }
+
+  /** Build / refresh every graphics layer inside OBS and nest them in each CAM scene. */
   async setupGraphics() {
     if (!this.transport) {
       this.notice("Connect to OBS first");
@@ -612,15 +679,15 @@ export class SwitcherEngine {
     const cams = this.state.config.camScenes.filter((n): n is string => !!n);
     this.notice("Setting up graphics in OBS…");
     try {
-      await this.transport.syncGraphics(cams, logoUrl(g), lowerThirdUrl(g));
-      this.updateConfig({
-        dsks: [
-          { scene: GFX_SCENE, source: GFX_LOWER },
-          { scene: GFX_SCENE, source: GFX_LOGO },
-        ],
-      });
-      await this.syncDsks();
-      this.notice("Graphics ready — DSK 1 = lower third, DSK 2 = logo");
+      await this.transport.syncGraphics(
+        cams,
+        GFX_LAYERS.map((l) => ({ name: l.name, url: layerUrl(l.id, g) })),
+      );
+      // DSK 1 / DSK 2 stay free for your own sources.
+      const dsks = this.state.config.dsks.map((d) => (d.scene === GFX_SCENE ? { scene: "", source: "" } : d));
+      this.updateConfig({ dsks });
+      await this.syncGfx();
+      this.notice("Graphics ready — use the Graphics panel to take them to air");
     } catch (error) {
       this.notice(`Graphics setup failed: ${error instanceof Error ? error.message : "unknown error"}`);
     }

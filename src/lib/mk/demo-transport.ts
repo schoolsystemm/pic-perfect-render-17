@@ -197,6 +197,11 @@ export class DemoTransport implements Transport {
   }
 
   async syncGraphics() {}
+  async setGraphicVisible() {}
+  async updateGraphic() {}
+  async readGraphics(): Promise<Record<string, boolean>> {
+    return {};
+  }
 
   async getSceneItems() {
     return ["Lower Third", "Logo Bug", "Clock", "Score Bug"];

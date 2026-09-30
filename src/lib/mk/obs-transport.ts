@@ -2,7 +2,7 @@
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
-import { GFX_LOGO, GFX_LOWER, GFX_SCENE } from "./graphics";
+import { GFX_SCENE } from "./graphics";
 import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
 
 export interface ObsTransportOptions {
@@ -42,6 +42,7 @@ export class ObsTransport implements Transport {
   private bus = new EventBus();
   private manualClose = false;
   private lastMeter = 0;
+  private gfxIds = new Map<string, number>();
   private dskItems: (DskItem | null)[] = Array.from({ length: DSK_COUNT }, () => null);
 
   constructor(private options: ObsTransportOptions) {
@@ -113,6 +114,11 @@ export class ObsTransport implements Transport {
       else if (!outputActive) this.bus.emit({ type: "record", active: false });
     });
     this.obs.on("SceneItemEnableStateChanged", (data) => {
+      if (data.sceneName === GFX_SCENE) {
+        for (const [name, id] of this.gfxIds) {
+          if (id === data.sceneItemId) this.bus.emit({ type: "gfx", name, on: data.sceneItemEnabled });
+        }
+      }
       // Only mirror the configured DSK items, not every source in every scene.
       this.dskItems.forEach((item, index) => {
         if (item && data.sceneName === item.scene && data.sceneItemId === item.id) {
@@ -444,7 +450,7 @@ export class ObsTransport implements Transport {
     }
   }
 
-  async syncGraphics(camScenes: string[], logoUrl: string, lowerUrl: string) {
+  async syncGraphics(camScenes: string[], layers: { name: string; url: string }[]) {
     let w = 1920;
     let h = 1080;
     try {
@@ -456,8 +462,8 @@ export class ObsTransport implements Transport {
     }
     const scenes = await this.getScenes();
     if (!scenes.includes(GFX_SCENE)) await this.obs.call("CreateScene", { sceneName: GFX_SCENE });
-    await this.ensureBrowser(GFX_SCENE, GFX_LOWER, lowerUrl, w, h);
-    await this.ensureBrowser(GFX_SCENE, GFX_LOGO, logoUrl, w, h);
+    for (const layer of layers) await this.ensureBrowser(GFX_SCENE, layer.name, layer.url, w, h);
+    this.gfxIds.clear();
     // Nest the graphics scene on top of every camera scene (once).
     for (const cam of camScenes) {
       if (cam === GFX_SCENE) continue;
@@ -471,6 +477,51 @@ export class ObsTransport implements Transport {
         });
       }
     }
+  }
+
+  private async gfxItemId(name: string): Promise<number> {
+    const cached = this.gfxIds.get(name);
+    if (cached !== undefined) return cached;
+    const { sceneItemId } = await this.obs.call("GetSceneItemId", {
+      sceneName: GFX_SCENE,
+      sourceName: name,
+    });
+    this.gfxIds.set(name, sceneItemId);
+    return sceneItemId;
+  }
+
+  async setGraphicVisible(name: string, on: boolean) {
+    const sceneItemId = await this.gfxItemId(name);
+    await this.obs.call("SetSceneItemEnabled", {
+      sceneName: GFX_SCENE,
+      sceneItemId,
+      sceneItemEnabled: on,
+    });
+  }
+
+  async readGraphics(names: string[]) {
+    const out: Record<string, boolean> = {};
+    for (const name of names) {
+      try {
+        const sceneItemId = await this.gfxItemId(name);
+        const { sceneItemEnabled } = await this.obs.call("GetSceneItemEnabled", {
+          sceneName: GFX_SCENE,
+          sceneItemId,
+        });
+        out[name] = sceneItemEnabled;
+      } catch {
+        /* layer not created yet */
+      }
+    }
+    return out;
+  }
+
+  async updateGraphic(name: string, url: string) {
+    await this.obs.call("SetInputSettings", {
+      inputName: name,
+      inputSettings: { url },
+      overlay: true,
+    });
   }
 
   async getSceneItems(scene: string) {
