@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
+import { GFX_SCENE } from "@/lib/mk/graphics";
 import {
   CAM_COUNT,
   DSK_COUNT,
@@ -104,6 +105,8 @@ function SettingsPage() {
   const [password, setPassword] = useState(config.password);
 
   const sceneOptions = state.scenes;
+  // MK Graphics is always pickable for a DSK, even before it exists in OBS.
+  const dskSceneOptions = sceneOptions.includes(GFX_SCENE) ? sceneOptions : [...sceneOptions, GFX_SCENE];
 
   return (
     <div className="mk-chassis min-h-[100dvh] pb-10">
@@ -247,7 +250,7 @@ function SettingsPage() {
                   onChange={(e) => engine.setDskTarget(i, { scene: e.target.value })}
                 >
                   <option value="">— current program —</option>
-                  {sceneOptions.map((scene) => (
+                  {dskSceneOptions.map((scene) => (
                     <option key={scene} value={scene}>
                       {scene}
                     </option>
@@ -273,95 +276,19 @@ function SettingsPage() {
               </p>
             )}
           <p className="font-mono text-[10px] text-muted-foreground">
-            Each DSK toggles its own source. The source must exist as an item inside the chosen scene. With “current program” it must exist in every
-            camera scene.
+            Each DSK toggles its own source. Pick “MK Graphics” as the scene to put the built-in graphics (logo, lower third,
+            ticker, clock, badge) on that DSK, then choose the layer in the source dropdown. Design them on the Graphics page.
           </p>
         </Section>
 
         <Section title="Graphics">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="mk-button h-11 rounded-sm px-4 text-sm text-foreground"
-              onClick={() => void engine.setupGraphics()}
-            >
-              {state.demo ? "Apply (demo)" : "Set up / update in OBS"}
-            </button>
-            <p className="font-mono text-[10px] text-muted-foreground">
-              Creates the “MK Graphics” scene in OBS (logo, lower third, ticker, clock, live badge) and adds it on
-              top of every CAM scene. Take them to air from the Graphics panel — they do not use DSK 1 / DSK 2.
-              Press this again after changing colours, speed or the logo.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className="grid gap-1">
-              <span className="mk-label">Logo size {config.graphics.logo.size}%</span>
-              <input
-                type="range"
-                min={4}
-                max={40}
-                value={config.graphics.logo.size}
-                onChange={(e) => engine.setGraphic("logo", { size: Number(e.target.value) })}
-                className="h-10"
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="mk-label">Lower third colour</span>
-              <input
-                type="color"
-                className="h-10 w-full rounded-sm border border-border bg-input"
-                value={config.graphics.lower.accent}
-                onChange={(e) => engine.setGraphic("lower", { accent: e.target.value })}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="mk-label">Badge colour</span>
-              <input
-                type="color"
-                className="h-10 w-full rounded-sm border border-border bg-input"
-                value={config.graphics.badge.color}
-                onChange={(e) => engine.setGraphic("badge", { color: e.target.value })}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="mk-label">Ticker colour</span>
-              <input
-                type="color"
-                className="h-10 w-full rounded-sm border border-border bg-input"
-                value={config.graphics.ticker.accent}
-                onChange={(e) => engine.setGraphic("ticker", { accent: e.target.value })}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="mk-label">Ticker speed — {config.graphics.ticker.speed}s per pass</span>
-              <input
-                type="range"
-                min={8}
-                max={60}
-                value={config.graphics.ticker.speed}
-                onChange={(e) => engine.setGraphic("ticker", { speed: Number(e.target.value) })}
-                className="h-10"
-              />
-            </label>
-            <div className="flex items-end gap-2">
-              <label className="mk-button flex h-10 items-center gap-2 rounded-sm px-3 text-xs">
-                <input
-                  type="checkbox"
-                  checked={config.graphics.clock.h24}
-                  onChange={(e) => engine.setGraphic("clock", { h24: e.target.checked })}
-                />
-                24h
-              </label>
-              <label className="mk-button flex h-10 items-center gap-2 rounded-sm px-3 text-xs">
-                <input
-                  type="checkbox"
-                  checked={config.graphics.clock.seconds}
-                  onChange={(e) => engine.setGraphic("clock", { seconds: e.target.checked })}
-                />
-                Seconds
-              </label>
-            </div>
-          </div>
+          <Link to="/graphics" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+            Open Graphics studio
+          </Link>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Design the logo, lower third, ticker, clock and badge on their own page, pick the one scene they
+            belong to, and press Save.
+          </p>
         </Section>
 
         <Section title="Monitors (real video)">
