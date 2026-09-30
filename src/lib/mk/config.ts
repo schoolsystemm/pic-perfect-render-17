@@ -3,6 +3,7 @@ import {
   CAM_COUNT,
   DEFAULT_CONFIG,
   DEFAULT_DSKS,
+  DEFAULT_GRAPHICS,
   DEFAULT_SHORTCUTS,
   DSK_COUNT,
   type DskTarget,
@@ -38,6 +39,7 @@ export function loadConfig(): MkConfig {
       camScenes,
       dsks,
       shortcuts: { ...DEFAULT_SHORTCUTS, ...(parsed.shortcuts ?? {}) },
+      graphics: { ...DEFAULT_GRAPHICS, ...(parsed.graphics ?? {}) },
     };
   } catch {
     return DEFAULT_CONFIG;

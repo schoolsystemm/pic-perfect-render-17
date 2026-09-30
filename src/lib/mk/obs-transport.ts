@@ -2,6 +2,7 @@
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
+import { GFX_LOGO, GFX_LOWER, GFX_SCENE } from "./graphics";
 import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
 
 export interface ObsTransportOptions {
@@ -406,6 +407,69 @@ export class ObsTransport implements Transport {
       return sceneItemEnabled;
     } catch {
       return null;
+    }
+  }
+
+  private async ensureBrowser(scene: string, name: string, url: string, w: number, h: number) {
+    const settings = {
+      url,
+      width: w,
+      height: h,
+      css: "body { background-color: rgba(0,0,0,0); margin: 0px auto; overflow: hidden; }",
+      // Reload when shown so the entrance animation replays on every DSK take.
+      shutdown: true,
+      restart_when_active: true,
+    };
+    let exists = true;
+    try {
+      await this.obs.call("GetInputSettings", { inputName: name });
+    } catch {
+      exists = false;
+    }
+    if (exists) {
+      await this.obs.call("SetInputSettings", { inputName: name, inputSettings: settings, overlay: true });
+      try {
+        await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: name });
+      } catch {
+        await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: name, sceneItemEnabled: false });
+      }
+    } else {
+      await this.obs.call("CreateInput", {
+        sceneName: scene,
+        inputName: name,
+        inputKind: "browser_source",
+        inputSettings: settings,
+        sceneItemEnabled: false,
+      });
+    }
+  }
+
+  async syncGraphics(camScenes: string[], logoUrl: string, lowerUrl: string) {
+    let w = 1920;
+    let h = 1080;
+    try {
+      const v = await this.obs.call("GetVideoSettings");
+      w = v.baseWidth;
+      h = v.baseHeight;
+    } catch {
+      /* keep defaults */
+    }
+    const scenes = await this.getScenes();
+    if (!scenes.includes(GFX_SCENE)) await this.obs.call("CreateScene", { sceneName: GFX_SCENE });
+    await this.ensureBrowser(GFX_SCENE, GFX_LOWER, lowerUrl, w, h);
+    await this.ensureBrowser(GFX_SCENE, GFX_LOGO, logoUrl, w, h);
+    // Nest the graphics scene on top of every camera scene (once).
+    for (const cam of camScenes) {
+      if (cam === GFX_SCENE) continue;
+      try {
+        await this.obs.call("GetSceneItemId", { sceneName: cam, sourceName: GFX_SCENE });
+      } catch {
+        await this.obs.call("CreateSceneItem", {
+          sceneName: cam,
+          sourceName: GFX_SCENE,
+          sceneItemEnabled: true,
+        });
+      }
     }
   }
 

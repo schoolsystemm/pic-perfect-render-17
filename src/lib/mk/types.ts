@@ -19,6 +19,26 @@ export interface DskTarget {
   source: string;
 }
 
+export interface GraphicsConfig {
+  /** Logo as a PNG data URL (null = none). */
+  logo: string | null;
+  logoPos: "tl" | "tr" | "bl" | "br";
+  /** Logo width as % of the screen. */
+  logoSize: number;
+  lowerName: string;
+  lowerTitle: string;
+  accent: string;
+}
+
+export const DEFAULT_GRAPHICS: GraphicsConfig = {
+  logo: null,
+  logoPos: "tr",
+  logoSize: 12,
+  lowerName: "Guest Name",
+  lowerTitle: "Title / Role",
+  accent: "#f5a623",
+};
+
 export interface MkConfig {
   host: string;
   port: number;
@@ -38,6 +58,7 @@ export interface MkConfig {
   liveVideo: boolean;
   /** Monitor refresh rate (frames per second, OBS screenshots). */
   monitorFps: number;
+  graphics: GraphicsConfig;
 }
 
 export interface Shortcuts {
@@ -50,6 +71,8 @@ export interface Shortcuts {
 }
 
 export const TRANSITION_DURATIONS = [300, 500, 750, 1000, 1500, 2000];
+/** Quick rate buttons on the transition panel. */
+export const RATE_BUTTONS = [300, 500, 1000, 1500, 2000];
 export const MONITOR_FPS_OPTIONS = [5, 8, 10, 15, 20];
 
 export const DEFAULT_SHORTCUTS: Shortcuts = {
@@ -79,6 +102,7 @@ export const DEFAULT_CONFIG: MkConfig = {
   audioFollowVideo: false,
   liveVideo: true,
   monitorFps: 10,
+  graphics: DEFAULT_GRAPHICS,
 };
 
 export interface SwitcherState {

@@ -4,6 +4,7 @@
 // exact same functions later.
 import { loadConfig, saveConfig } from "./config";
 import { DemoTransport } from "./demo-transport";
+import { GFX_LOGO, GFX_LOWER, GFX_SCENE, logoUrl, lowerThirdUrl } from "./graphics";
 import type { Transport, TransportEvent } from "./transport";
 import {
   CAM_COUNT,
@@ -14,6 +15,7 @@ import {
   IDLE_OUTPUT,
   type CamIndex,
   type DskTarget,
+  type GraphicsConfig,
   type MkConfig,
   type MonitorType,
   type OutputState,
@@ -142,7 +144,7 @@ export class SwitcherEngine {
   }
 
   autoMapScenes() {
-    const scenes = this.state.scenes.slice(0, CAM_COUNT);
+    const scenes = this.state.scenes.filter((n) => n !== GFX_SCENE).slice(0, CAM_COUNT);
     const camScenes = Array.from({ length: CAM_COUNT }, (_, i) => scenes[i] ?? null);
     this.updateConfig({ camScenes });
     this.set({
@@ -594,6 +596,34 @@ export class SwitcherEngine {
 
   setAutoConnect(autoConnect: boolean) {
     this.updateConfig({ autoConnect });
+  }
+
+  setGraphics(patch: Partial<GraphicsConfig>) {
+    this.updateConfig({ graphics: { ...this.state.config.graphics, ...patch } });
+  }
+
+  /** Build / refresh the logo + lower third inside OBS and point DSK 1 / DSK 2 at them. */
+  async setupGraphics() {
+    if (!this.transport) {
+      this.notice("Connect to OBS first");
+      return;
+    }
+    const g = this.state.config.graphics;
+    const cams = this.state.config.camScenes.filter((n): n is string => !!n);
+    this.notice("Setting up graphics in OBS…");
+    try {
+      await this.transport.syncGraphics(cams, logoUrl(g), lowerThirdUrl(g));
+      this.updateConfig({
+        dsks: [
+          { scene: GFX_SCENE, source: GFX_LOWER },
+          { scene: GFX_SCENE, source: GFX_LOGO },
+        ],
+      });
+      await this.syncDsks();
+      this.notice("Graphics ready — DSK 1 = lower third, DSK 2 = logo");
+    } catch (error) {
+      this.notice(`Graphics setup failed: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
   }
 
   setLiveVideo(liveVideo: boolean) {

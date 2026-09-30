@@ -196,6 +196,8 @@ export class DemoTransport implements Transport {
     return null;
   }
 
+  async syncGraphics() {}
+
   async getSceneItems() {
     return ["Lower Third", "Logo Bug", "Clock", "Score Bug"];
   }

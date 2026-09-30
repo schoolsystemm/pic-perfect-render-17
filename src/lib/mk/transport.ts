@@ -51,6 +51,8 @@ export interface Transport {
   setStreaming(on: boolean): Promise<void>;
   setRecording(on: boolean): Promise<void>;
   setRecordPaused(paused: boolean): Promise<void>;
+  /** Create / update the MK Graphics scene (logo + lower third) and nest it in every cam scene. */
+  syncGraphics(camScenes: string[], logoUrl: string, lowerUrl: string): Promise<void>;
   /** Names of the sources (scene items) inside a scene, for the DSK pickers. */
   getSceneItems(scene: string): Promise<string[]>;
   /** JPEG data-URI snapshot of a scene, for the real-video monitors. */
