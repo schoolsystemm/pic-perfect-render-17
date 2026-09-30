@@ -83,6 +83,8 @@ function Switcher() {
                 fps={state.config.monitorFps}
                 connected={state.status === "connected"}
                 getFrame={engine.getScreenshot}
+                demo={state.demo}
+                graphics={state.config.graphics}
               />
             </div>
           )}
@@ -129,6 +131,9 @@ function Switcher() {
             transitioning={state.transitioning}
             transitionName={state.config.transition}
             duration={state.config.transitionDuration}
+            transitions={state.transitions}
+            onTransition={(name) => void engine.setTransition(name)}
+            onDuration={(ms) => void engine.setTransitionDuration(ms)}
             onDsk={(index) => void engine.toggleDSK(index)}
             onAutoTake={() => void engine.autoTake()}
             onCut={() => void engine.cut()}

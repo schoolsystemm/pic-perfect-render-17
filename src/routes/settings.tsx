@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { fileToLogo } from "@/lib/mk/graphics";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import {
   CAM_COUNT,
@@ -276,6 +277,108 @@ function SettingsPage() {
             Each DSK toggles its own source. The source must exist as an item inside the chosen scene. With “current program” it must exist in every
             camera scene.
           </p>
+        </Section>
+
+        <Section title="Graphics (logo + lower third)">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1">
+              <span className="mk-label">Logo (PNG with transparency works best)</span>
+              <input
+                type="file"
+                accept="image/*"
+                className={`${fieldClass} h-auto py-2 text-xs`}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    engine.setGraphics({ logo: await fileToLogo(file) });
+                  } catch {
+                    /* invalid image */
+                  }
+                }}
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="grid gap-1">
+                <span className="mk-label">Logo position</span>
+                <select
+                  className={fieldClass}
+                  value={config.graphics.logoPos}
+                  onChange={(e) =>
+                    engine.setGraphics({ logoPos: e.target.value as typeof config.graphics.logoPos })
+                  }
+                >
+                  <option value="tl">Top left</option>
+                  <option value="tr">Top right</option>
+                  <option value="bl">Bottom left</option>
+                  <option value="br">Bottom right</option>
+                </select>
+              </label>
+              <label className="grid gap-1">
+                <span className="mk-label">Logo size {config.graphics.logoSize}%</span>
+                <input
+                  type="range"
+                  min={4}
+                  max={40}
+                  value={config.graphics.logoSize}
+                  onChange={(e) => engine.setGraphics({ logoSize: Number(e.target.value) })}
+                  className="h-10"
+                />
+              </label>
+            </div>
+          </div>
+          {config.graphics.logo && (
+            <div className="flex items-center gap-3">
+              <img src={config.graphics.logo} alt="Logo preview" className="h-12 rounded-sm bg-bezel p-1" />
+              <button
+                type="button"
+                className="mk-button h-9 rounded-sm px-3 text-xs"
+                onClick={() => engine.setGraphics({ logo: null })}
+              >
+                Remove logo
+              </button>
+            </div>
+          )}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="grid gap-1">
+              <span className="mk-label">Lower third — name</span>
+              <input
+                className={fieldClass}
+                value={config.graphics.lowerName}
+                onChange={(e) => engine.setGraphics({ lowerName: e.target.value })}
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="mk-label">Lower third — title</span>
+              <input
+                className={fieldClass}
+                value={config.graphics.lowerTitle}
+                onChange={(e) => engine.setGraphics({ lowerTitle: e.target.value })}
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="mk-label">Accent colour</span>
+              <input
+                type="color"
+                className="h-10 w-full rounded-sm border border-border bg-input"
+                value={config.graphics.accent}
+                onChange={(e) => engine.setGraphics({ accent: e.target.value })}
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="mk-button h-11 rounded-sm px-4 text-sm text-foreground"
+              onClick={() => void engine.setupGraphics()}
+            >
+              {state.demo ? "Apply (demo)" : "Set up / update in OBS"}
+            </button>
+            <p className="font-mono text-[10px] text-muted-foreground">
+              Creates the “MK Graphics” scene in OBS, adds it on top of every CAM scene, and sets DSK 1 = lower
+              third, DSK 2 = logo. Press it again after changing text or logo.
+            </p>
+          </div>
         </Section>
 
         <Section title="Monitors (real video)">
