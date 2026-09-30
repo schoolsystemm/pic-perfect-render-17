@@ -1,11 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { AudioMixer } from "@/components/mk/audio-mixer";
+import { ListenControl } from "@/components/mk/listen-control";
 import { GraphicsPanel } from "@/components/mk/graphics-panel";
 import { Multiview } from "@/components/mk/multiview";
 import { OutputControls } from "@/components/mk/output-controls";
 import { ReconnectOverlay } from "@/components/mk/reconnect-overlay";
+import { SoundPad } from "@/components/mk/sound-pad";
 import { SourceBus } from "@/components/mk/source-bus";
 import { StatusBar } from "@/components/mk/status-bar";
 import { TransitionPanel } from "@/components/mk/transition-panel";
@@ -35,13 +37,13 @@ export const Route = createFileRoute("/")({
   component: Switcher,
 });
 
-type Panel = "multiview" | "audio" | "graphics";
-const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", audio: "Audio", graphics: "Graphics" };
+type Panel = "multiview" | "audio" | "graphics" | "sounds";
+const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", audio: "Audio", graphics: "Graphics", sounds: "Sounds" };
 
 function Switcher() {
   const state = useSwitcher();
   useShortcuts(state.config.shortcuts);
-  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, audio: true, graphics: true });
+  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, audio: true, graphics: true, sounds: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
 
   return (
@@ -55,7 +57,7 @@ function Switcher() {
       />
 
       <div className="flex gap-1.5 border-b border-border px-2 py-1 phone-land:py-0.5">
-        {(["multiview", "audio", "graphics"] as Panel[]).map((p) => (
+        {(["multiview", "audio", "graphics", "sounds"] as Panel[]).map((p) => (
           <button
             key={p}
             type="button"
@@ -65,6 +67,7 @@ function Switcher() {
             {PANEL_LABEL[p]} {show[p] ? "▾" : "▸"}
           </button>
         ))}
+        <ListenControl config={state.config} />
       </div>
 
       <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 sm:flex-row sm:gap-3 sm:p-3 phone-land:flex-row phone-land:gap-2 phone-land:p-1.5">
@@ -104,10 +107,15 @@ function Switcher() {
             onSelect={(cam) => void engine.selectPreview(cam)}
           />
           {show.graphics && <GraphicsPanel graphics={state.config.graphics} active={state.gfxActive} />}
+          {show.sounds && (
+            <div>
+              <SoundPad />
+              <Link to="/sounds" className="mk-label mt-1 inline-block px-1 text-[9px] underline">Manage sounds</Link>
+            </div>
+          )}
           {show.audio && (
             <AudioMixer
               channels={state.audio}
-              mainAudio={state.mainAudio}
               levels={state.levels}
               afv={state.config.audioFollowVideo}
               camOf={(name) => engine.audioCam(name)}
@@ -115,6 +123,8 @@ function Switcher() {
               onMute={(name) => void engine.toggleAudioMute(name)}
               onMonitor={(name) => void engine.cycleAudioMonitor(name)}
               onStream={(name) => void engine.toggleAudioStream(name)}
+              onPre={(name) => void engine.toggleAudioPre(name)}
+              onHearFinal={(on) => void engine.hearFinalInPre(on)}
               onAfv={(on) => engine.setAudioFollowVideo(on)}
             />
           )}

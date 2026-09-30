@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { GFX_SCENE } from "@/lib/mk/graphics";
+import { resolveListenUrl } from "@/lib/mk/listen";
 import {
   CAM_COUNT,
   DSK_COUNT,
@@ -288,6 +289,28 @@ function SettingsPage() {
           <p className="font-mono text-[10px] text-muted-foreground">
             Design the logo, lower third, ticker, clock and badge on their own page, pick the one scene they
             belong to, and press Save.
+          </p>
+        </Section>
+
+        <Section title="Sounds">
+          <Link to="/sounds" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
+            Open Sounds library
+          </Link>
+        </Section>
+
+        <Section title="Listen (hear OBS on this device)">
+          <label className="grid gap-1">
+            <span className="mk-label">Audio address (WHEP)</span>
+            <input
+              className={fieldClass}
+              value={config.listenUrl}
+              placeholder={resolveListenUrl("", config.host) || "http://192.168.1.100:8889/mk/whep"}
+              onChange={(e) => engine.setListen({ listenUrl: e.target.value })}
+            />
+          </label>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Leave empty to use the OBS host with port 8889. Needs the free MediaMTX server running on the OBS PC and OBS
+            sending audio to it — see audio-bridge/SETUP.md. Then press Listen at the top of the switcher.
           </p>
         </Section>
 

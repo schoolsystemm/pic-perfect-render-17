@@ -149,7 +149,7 @@ function GraphicsPage() {
                 <Corners value={draft.logo.pos} onChange={(pos) => edit("logo", { pos })} />
               </Row>
               <Row label={`Size ${draft.logo.size}%`}>
-                <input type="range" min={4} max={40} value={draft.logo.size} className="h-10" onChange={(e) => edit("logo", { size: Number(e.target.value) })} />
+                <input type="range" min={3} max={60} value={draft.logo.size} className="h-10" onChange={(e) => edit("logo", { size: Number(e.target.value) })} />
               </Row>
             </div>
           )}
@@ -164,6 +164,9 @@ function GraphicsPage() {
               </Row>
               <Row label="Accent colour">
                 <input type="color" className="h-10 w-full rounded-sm border border-border bg-input" value={draft.lower.accent} onChange={(e) => edit("lower", { accent: e.target.value })} />
+              </Row>
+              <Row label={`Size ${draft.lower.size}%`}>
+                <input type="range" min={30} max={300} step={5} value={draft.lower.size} className="h-10" onChange={(e) => edit("lower", { size: Number(e.target.value) })} />
               </Row>
               <div className="grid gap-1 sm:col-span-2">
                 <span className="mk-label">Saved presets</span>
@@ -215,6 +218,21 @@ function GraphicsPage() {
               <Row label={`Speed — ${draft.ticker.speed}s per pass`}>
                 <input type="range" min={8} max={60} value={draft.ticker.speed} className="h-10" onChange={(e) => edit("ticker", { speed: Number(e.target.value) })} />
               </Row>
+              <Row label={`Size ${draft.ticker.size}%`}>
+                <input type="range" min={30} max={300} step={5} value={draft.ticker.size} className="h-10" onChange={(e) => edit("ticker", { size: Number(e.target.value) })} />
+              </Row>
+              <Row label="Scroll direction">
+                <select className={field} value={draft.ticker.direction} onChange={(e) => edit("ticker", { direction: e.target.value as "left" | "right" })}>
+                  <option value="left">Right → Left (normal)</option>
+                  <option value="right">Left → Right</option>
+                </select>
+              </Row>
+              <Row label="Bar position">
+                <select className={field} value={draft.ticker.pos} onChange={(e) => edit("ticker", { pos: e.target.value as "top" | "bottom" })}>
+                  <option value="bottom">Bottom</option>
+                  <option value="top">Top</option>
+                </select>
+              </Row>
             </div>
           )}
 
@@ -222,6 +240,9 @@ function GraphicsPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <Row label="Position">
                 <Corners value={draft.clock.pos} onChange={(pos) => edit("clock", { pos })} />
+              </Row>
+              <Row label={`Size ${draft.clock.size}%`}>
+                <input type="range" min={30} max={300} step={5} value={draft.clock.size} className="h-10" onChange={(e) => edit("clock", { size: Number(e.target.value) })} />
               </Row>
               <div className="flex items-end gap-2">
                 <label className="mk-button flex h-10 items-center gap-2 rounded-sm px-3 text-xs">
@@ -244,6 +265,9 @@ function GraphicsPage() {
               </Row>
               <Row label="Colour">
                 <input type="color" className="h-10 w-full rounded-sm border border-border bg-input" value={draft.badge.color} onChange={(e) => edit("badge", { color: e.target.value })} />
+              </Row>
+              <Row label={`Size ${draft.badge.size}%`}>
+                <input type="range" min={30} max={300} step={5} value={draft.badge.size} className="h-10" onChange={(e) => edit("badge", { size: Number(e.target.value) })} />
               </Row>
             </div>
           )}
