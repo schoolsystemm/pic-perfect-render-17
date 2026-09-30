@@ -25,7 +25,7 @@ export function TransitionPanel({
   onTBarRelease,
 }: TransitionPanelProps) {
   return (
-    <aside className="mk-panel flex w-full flex-col gap-2 rounded-md p-2 sm:w-[13.5rem] sm:gap-2.5 sm:p-3">
+    <aside className="mk-panel flex w-full flex-1 flex-col gap-2 rounded-md p-2 sm:w-[13.5rem] phone-land:w-full sm:gap-2.5 sm:p-3">
       <button
         type="button"
         onPointerDown={(event) => {
