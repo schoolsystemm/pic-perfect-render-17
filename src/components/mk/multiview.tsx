@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { useClock } from "@/components/mk/use-clock";
-import { camLabel, type CamIndex, type GraphicsConfig } from "@/lib/mk/types";
+import { DemoGraphics } from "@/components/mk/demo-graphics";
+import { camLabel, type CamIndex, type GfxId, type GraphicsConfig } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 interface MultiviewProps {
@@ -22,6 +23,7 @@ interface MultiviewProps {
   /** Demo Mode has no real OBS output, so the graphics are drawn here. */
   demo: boolean;
   graphics: GraphicsConfig;
+  gfxActive: Record<GfxId, boolean>;
 }
 
 function timecode(now: number) {
@@ -142,31 +144,7 @@ export function Multiview(props: MultiviewProps) {
               ),
           )}
         </div>
-        {props.demo && props.dskActive[0] && (
-          <div className="pointer-events-none absolute bottom-7 left-[6%] flex">
-            <div className="w-1" style={{ background: props.graphics.accent }} />
-            <div className="bg-black/90 px-2 py-1 text-white">
-              <div className="text-[11px] leading-none font-extrabold tracking-wide uppercase sm:text-sm">{props.graphics.lowerName}</div>
-              <div className="text-[9px] leading-tight sm:text-[11px]" style={{ color: props.graphics.accent }}>
-                {props.graphics.lowerTitle}
-              </div>
-            </div>
-          </div>
-        )}
-        {props.demo && props.dskActive[1] && props.graphics.logo && (
-          <img
-            src={props.graphics.logo}
-            alt=""
-            className={cn(
-              "pointer-events-none absolute",
-              props.graphics.logoPos === "tl" && "top-6 left-2",
-              props.graphics.logoPos === "tr" && "top-6 right-2",
-              props.graphics.logoPos === "bl" && "bottom-7 left-2",
-              props.graphics.logoPos === "br" && "right-2 bottom-7",
-            )}
-            style={{ width: `${props.graphics.logoSize}%` }}
-          />
-        )}
+        {props.demo && <DemoGraphics g={props.graphics} active={props.gfxActive} />}
         <span className="absolute top-1 right-1 rounded-sm bg-black/50 px-1 font-mono text-[10px] text-amber">
           {timecode(now)}
         </span>
