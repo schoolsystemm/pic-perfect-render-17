@@ -450,7 +450,7 @@ export class ObsTransport implements Transport {
     }
   }
 
-  async syncGraphics(camScenes: string[], layers: { name: string; url: string }[]) {
+  async syncGraphics(targetScenes: string[], layers: { name: string; url: string }[], removeFrom: string[] = []) {
     let w = 1920;
     let h = 1080;
     try {
@@ -464,17 +464,27 @@ export class ObsTransport implements Transport {
     if (!scenes.includes(GFX_SCENE)) await this.obs.call("CreateScene", { sceneName: GFX_SCENE });
     for (const layer of layers) await this.ensureBrowser(GFX_SCENE, layer.name, layer.url, w, h);
     this.gfxIds.clear();
-    // Nest the graphics scene on top of every camera scene (once).
-    for (const cam of camScenes) {
-      if (cam === GFX_SCENE) continue;
+    // Nest the graphics scene into the chosen scene(s) only (once each).
+    for (const scene of targetScenes) {
+      if (scene === GFX_SCENE) continue;
       try {
-        await this.obs.call("GetSceneItemId", { sceneName: cam, sourceName: GFX_SCENE });
+        await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: GFX_SCENE });
       } catch {
         await this.obs.call("CreateSceneItem", {
-          sceneName: cam,
+          sceneName: scene,
           sourceName: GFX_SCENE,
           sceneItemEnabled: true,
         });
+      }
+    }
+    // Optional clean-up of copies left in other scenes by older versions.
+    for (const scene of removeFrom) {
+      if (scene === GFX_SCENE || targetScenes.includes(scene)) continue;
+      try {
+        const { sceneItemId } = await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: GFX_SCENE });
+        await this.obs.call("RemoveSceneItem", { sceneName: scene, sceneItemId });
+      } catch {
+        /* not nested there */
       }
     }
   }

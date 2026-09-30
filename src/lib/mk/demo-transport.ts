@@ -203,7 +203,8 @@ export class DemoTransport implements Transport {
     return {};
   }
 
-  async getSceneItems() {
+  async getSceneItems(scene?: string) {
+    if (scene === "MK Graphics") return ["MK Logo", "MK Lower Third", "MK Ticker", "MK Clock", "MK Badge"];
     return ["Lower Third", "Logo Bug", "Clock", "Score Bug"];
   }
 

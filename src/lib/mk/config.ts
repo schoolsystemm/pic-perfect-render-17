@@ -1,5 +1,4 @@
 // Local-only configuration persistence. OBS credentials never leave the device.
-import { GFX_SCENE } from "./graphics";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -80,8 +79,6 @@ export function loadConfig(): MkConfig {
     // Migrate the old single-DSK fields into DSK 1.
     const dsks: DskTarget[] = Array.from({ length: DSK_COUNT }, (_, i) => {
       const stored = parsed.dsks?.[i];
-      // DSKs are no longer used for the built-in graphics — free any that were.
-      if (stored?.scene === GFX_SCENE) return { scene: "", source: "" };
       if (stored) return { scene: stored.scene ?? "", source: stored.source ?? "" };
       if (i === 0 && (parsed.dskScene || parsed.dskSource)) {
         return { scene: parsed.dskScene ?? "", source: parsed.dskSource ?? "" };
@@ -95,6 +92,7 @@ export function loadConfig(): MkConfig {
       dsks,
       shortcuts: { ...DEFAULT_SHORTCUTS, ...(parsed.shortcuts ?? {}) },
       graphics: mergeGraphics(parsed.graphics),
+      graphicsScene: typeof parsed.graphicsScene === "string" ? parsed.graphicsScene : "",
     };
   } catch {
     return DEFAULT_CONFIG;

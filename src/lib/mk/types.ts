@@ -77,6 +77,8 @@ export interface MkConfig {
   /** Monitor refresh rate (frames per second, OBS screenshots). */
   monitorFps: number;
   graphics: GraphicsConfig;
+  /** The ONE scene the MK Graphics scene is nested into ("" = not nested anywhere). */
+  graphicsScene: string;
 }
 
 export interface Shortcuts {
@@ -121,6 +123,7 @@ export const DEFAULT_CONFIG: MkConfig = {
   liveVideo: true,
   monitorFps: 10,
   graphics: DEFAULT_GRAPHICS,
+  graphicsScene: "",
 };
 
 export interface SwitcherState {

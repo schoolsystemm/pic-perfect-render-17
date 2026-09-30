@@ -669,27 +669,33 @@ export class SwitcherEngine {
     this.setGraphic("lower", { presets: lower.presets.filter((_, i) => i !== index) });
   }
 
-  /** Build / refresh every graphics layer inside OBS and nest them in each CAM scene. */
-  async setupGraphics() {
-    if (!this.transport) {
-      this.notice("Connect to OBS first");
+  /**
+   * Save the graphics page: store the design, then push every layer to OBS.
+   * The MK Graphics scene is nested into `scene` ONLY — never into other scenes.
+   * DSK 1 / DSK 2 are left exactly as configured.
+   */
+  async saveGraphics(graphics: GraphicsConfig, scene: string, cleanOthers = false) {
+    this.updateConfig({ graphics, graphicsScene: scene });
+    if (this.state.demo) {
+      this.notice("Graphics saved");
       return;
     }
-    const g = this.state.config.graphics;
-    const cams = this.state.config.camScenes.filter((n): n is string => !!n);
-    this.notice("Setting up graphics in OBS…");
+    if (!this.transport) {
+      this.notice("Saved — connect to OBS to apply");
+      return;
+    }
+    this.notice("Saving graphics to OBS…");
     try {
+      const others = cleanOthers ? this.state.scenes : [];
       await this.transport.syncGraphics(
-        cams,
-        GFX_LAYERS.map((l) => ({ name: l.name, url: layerUrl(l.id, g) })),
+        scene ? [scene] : [],
+        GFX_LAYERS.map((l) => ({ name: l.name, url: layerUrl(l.id, graphics) })),
+        others,
       );
-      // DSK 1 / DSK 2 stay free for your own sources.
-      const dsks = this.state.config.dsks.map((d) => (d.scene === GFX_SCENE ? { scene: "", source: "" } : d));
-      this.updateConfig({ dsks });
       await this.syncGfx();
-      this.notice("Graphics ready — use the Graphics panel to take them to air");
+      this.notice(scene ? `Graphics saved — added to "${scene}" only` : "Graphics saved");
     } catch (error) {
-      this.notice(`Graphics setup failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      this.notice(`Graphics save failed: ${error instanceof Error ? error.message : "unknown error"}`);
     }
   }
 

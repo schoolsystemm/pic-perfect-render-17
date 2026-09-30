@@ -52,8 +52,15 @@ export interface Transport {
   setStreaming(on: boolean): Promise<void>;
   setRecording(on: boolean): Promise<void>;
   setRecordPaused(paused: boolean): Promise<void>;
-  /** Create / update the MK Graphics scene (one browser source per layer) and nest it in every cam scene. */
-  syncGraphics(camScenes: string[], layers: { name: string; url: string }[]): Promise<void>;
+  /**
+   * Create / update the MK Graphics scene (one browser source per layer) and nest it
+   * ONLY into `targetScenes`. Scenes in `removeFrom` get the nested copy removed.
+   */
+  syncGraphics(
+    targetScenes: string[],
+    layers: { name: string; url: string }[],
+    removeFrom?: string[],
+  ): Promise<void>;
   /** Show / hide one graphics layer (independent of the DSKs). */
   setGraphicVisible(name: string, on: boolean): Promise<void>;
   /** Current on/off state of each named layer that exists in OBS. */
