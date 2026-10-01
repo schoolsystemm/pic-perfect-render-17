@@ -207,6 +207,18 @@ export class DemoTransport implements Transport {
     }
   }
 
+  // Picture effects have nothing to draw on in Demo Mode; the engine still runs the whole sequence.
+  async fxStage() {
+    return { width: 1920, height: 1080 };
+  }
+
+  async fxFrame() {}
+
+  async fxCutTo(scene: string) {
+    this.program = scene;
+    this.bus.emit({ type: "programScene", scene });
+  }
+
   async toggleDSK(index: number, on: boolean) {
     this.dsk[index] = on;
     this.bus.emit({ type: "dsk", index, on });

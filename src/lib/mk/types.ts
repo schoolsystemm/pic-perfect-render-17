@@ -2,6 +2,8 @@
 // Kept free of UI and transport concerns so the same contracts can later back a
 // physical MK VISION PANEL hardware interface.
 
+import { DEFAULT_FX, type FxConfig, type FxLayoutKind } from "./fx";
+
 export const CAM_COUNT = 8;
 export const DSK_COUNT = 2;
 
@@ -199,6 +201,8 @@ export interface MkConfig {
   hiddenAudio: string[];
   /** Pre-planned run of show (titles + planned lengths) shown in the Tools panel. */
   rundown: RundownItem[];
+  /** Squeeze / PiP / Merge settings. */
+  fx: FxConfig;
 }
 
 export interface RundownItem {
@@ -265,6 +269,7 @@ export const DEFAULT_CONFIG: MkConfig = {
   limiter: DEFAULT_LIMITER,
   hiddenAudio: [],
   rundown: [],
+  fx: DEFAULT_FX,
 };
 
 export interface SwitcherState {
@@ -282,6 +287,8 @@ export interface SwitcherState {
   gfxActive: Record<GfxId, boolean>;
   tBar: number; // 0..1
   transitioning: boolean;
+  /** Picture effects: `running` while one animates, `layout` while PiP / Merge is held on air. */
+  fx: { running: boolean; layout: FxLayoutKind | null };
   scenes: string[];
   transitions: string[];
   studioMode: boolean;

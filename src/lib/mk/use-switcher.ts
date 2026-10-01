@@ -15,6 +15,7 @@ const serverSnapshot: SwitcherState = {
   gfxActive: IDLE_GFX,
   tBar: 0,
   transitioning: false,
+  fx: { running: false, layout: null },
   scenes: [],
   transitions: [],
   studioMode: false,

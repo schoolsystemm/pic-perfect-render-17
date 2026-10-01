@@ -2,6 +2,7 @@
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
+import { FX_SCENE, type FxRect } from "./fx";
 import { GFX_SCENE } from "./graphics";
 import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
 
@@ -652,6 +653,90 @@ export class ObsTransport implements Transport {
       return sceneItems.map((i) => String(i["sourceName"]));
     } catch {
       return [];
+    }
+  }
+
+  // ------------------------------------------------------------ picture effects ("MK FX" scene)
+
+  private fxIds = new Map<string, number>();
+  private fxOn = new Map<string, boolean>();
+
+  async fxStage(cams: string[], bottom: string, top: string) {
+    const scenes = await this.getScenes();
+    if (!scenes.includes(FX_SCENE)) await this.obs.call("CreateScene", { sceneName: FX_SCENE });
+    const video = await this.obs.call("GetVideoSettings");
+    const list = await this.obs.call("GetSceneItemList", { sceneName: FX_SCENE });
+    this.fxIds.clear();
+    this.fxOn.clear();
+    for (const it of list.sceneItems) {
+      const name = String(it["sourceName"]);
+      this.fxIds.set(name, Number(it["sceneItemId"]));
+      this.fxOn.set(name, it["sceneItemEnabled"] === true);
+    }
+    for (const cam of cams) {
+      if (this.fxIds.has(cam)) continue;
+      const res = await this.obs.call("CreateSceneItem", { sceneName: FX_SCENE, sourceName: cam, sceneItemEnabled: false });
+      this.fxIds.set(cam, res.sceneItemId);
+      this.fxOn.set(cam, false);
+    }
+    const b = this.fxIds.get(bottom);
+    const t = this.fxIds.get(top);
+    if (b === undefined || t === undefined) throw new Error("MK FX: camera scene missing");
+    await this.obs.call("SetSceneItemIndex", { sceneName: FX_SCENE, sceneItemId: b, sceneItemIndex: 0 });
+    await this.obs.call("SetSceneItemIndex", { sceneName: FX_SCENE, sceneItemId: t, sceneItemIndex: Math.max(1, this.fxIds.size - 1) });
+    return { width: video.baseWidth, height: video.baseHeight };
+  }
+
+  async fxFrame(frame: Record<string, FxRect | null>) {
+    const requests: { requestType: string; requestData: Record<string, unknown> }[] = [];
+    for (const [scene, r] of Object.entries(frame)) {
+      const id = this.fxIds.get(scene);
+      if (id === undefined) continue;
+      if (r) {
+        // Place it first, then show it, so an item never appears for a frame in its old spot.
+        requests.push({
+          requestType: "SetSceneItemTransform",
+          requestData: {
+            sceneName: FX_SCENE,
+            sceneItemId: id,
+            sceneItemTransform: {
+              positionX: r.x,
+              positionY: r.y,
+              scaleX: Math.max(r.sx, 0.001),
+              scaleY: Math.max(r.sy, 0.001),
+              rotation: 0,
+              alignment: 5, // top-left
+              boundsType: "OBS_BOUNDS_NONE",
+              cropLeft: Math.round(r.cl),
+              cropRight: Math.round(r.cr),
+              cropTop: Math.round(r.ct),
+              cropBottom: Math.round(r.cb),
+            },
+          },
+        });
+      }
+      if (this.fxOn.get(scene) !== !!r) {
+        this.fxOn.set(scene, !!r);
+        requests.push({ requestType: "SetSceneItemEnabled", requestData: { sceneName: FX_SCENE, sceneItemId: id, sceneItemEnabled: !!r } });
+      }
+    }
+    if (requests.length) await this.obs.callBatch(requests as unknown as Parameters<typeof this.obs.callBatch>[0]);
+  }
+
+  async fxCutTo(scene: string) {
+    const previous = await this.currentTransition();
+    try {
+      await this.obs.call("SetCurrentSceneTransition", { transitionName: "Cut" });
+    } catch {
+      /* no Cut transition: the program still switches, just with the selected transition */
+    }
+    await this.obs.call("SetCurrentProgramScene", { sceneName: scene });
+    if (previous && previous !== "Cut") {
+      try {
+        await this.obs.call("SetCurrentSceneTransition", { transitionName: previous });
+      } catch {
+        /* ignore */
+      }
     }
   }
 

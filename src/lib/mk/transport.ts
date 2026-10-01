@@ -1,6 +1,7 @@
 // Transport contract: the only surface the control engine uses to talk to a
 // mixer backend. OBS WebSocket 5.x and Demo Mode both implement it, and a
 // future hardware bridge can too.
+import type { FxRect } from "./fx";
 import type { AudioChannel, ConnectionStatus, MonitorType } from "./types";
 
 export type TransportEvent =
@@ -84,6 +85,15 @@ export interface Transport {
   getSceneItems(scene: string): Promise<string[]>;
   /** JPEG data-URI snapshot of a scene, for the real-video monitors. */
   getScreenshot(scene: string, width: number, height: number): Promise<string | null>;
+  /**
+   * Picture effects. Make sure the "MK FX" scene exists with a nested item per camera scene, and put
+   * `top` above `bottom`. Returns the canvas size. Does NOT change what is on air.
+   */
+  fxStage(cams: string[], bottom: string, top: string): Promise<{ width: number; height: number }>;
+  /** Place the nested camera scenes in "MK FX" (null = hidden). Keyed by scene name. */
+  fxFrame(frame: Record<string, FxRect | null>): Promise<void>;
+  /** Switch program to `scene` as a hard cut, whatever transition is selected. Keeps the selected transition. */
+  fxCutTo(scene: string): Promise<void>;
   /** Re-emit authoritative program / preview scenes. */
   resync(): Promise<void>;
   subscribe(listener: (event: TransportEvent) => void): () => void;

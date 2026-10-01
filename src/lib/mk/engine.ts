@@ -4,6 +4,7 @@
 // exact same functions later.
 import { loadConfig, saveConfig } from "./config";
 import { DemoTransport } from "./demo-transport";
+import { FX_SCENE, ease, mergeFrame, pipFrame, squeezeFrame, type FxConfig, type FxLayoutKind, type FxPair, type FxRect } from "./fx";
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import type { Transport, TransportEvent } from "./transport";
@@ -46,6 +47,7 @@ function initialState(config: MkConfig): SwitcherState {
     gfxActive: IDLE_GFX,
     tBar: 0,
     transitioning: false,
+    fx: { running: false, layout: null },
     scenes: [],
     transitions: [],
     studioMode: false,
@@ -81,6 +83,8 @@ export class SwitcherEngine {
   private tbarPending: number | null = null;
   private tbarHeld = false;
   private booted = false;
+  /** While PiP / Merge is held on air: the two scenes involved and the canvas size. */
+  private fxHold: { a: string; b: string; w: number; h: number } | null = null;
 
   /** Hydrate stored config on the client. Safe to call repeatedly. */
   boot() {
@@ -148,7 +152,7 @@ export class SwitcherEngine {
   }
 
   autoMapScenes() {
-    const scenes = this.state.scenes.filter((n) => n !== GFX_SCENE).slice(0, CAM_COUNT);
+    const scenes = this.state.scenes.filter((n) => n !== GFX_SCENE && n !== FX_SCENE).slice(0, CAM_COUNT);
     const camScenes = Array.from({ length: CAM_COUNT }, (_, i) => scenes[i] ?? null);
     this.updateConfig({ camScenes });
     this.set({
@@ -172,6 +176,8 @@ export class SwitcherEngine {
 
   async connect() {
     await this.teardown();
+    this.fxHold = null;
+    this.set({ fx: { running: false, layout: null } });
     const { demoMode, host, port, password } = this.state.config;
     if (!demoMode && !host) {
       this.set({ status: "error", statusMessage: "NO HOST CONFIGURED" });
@@ -262,6 +268,8 @@ export class SwitcherEngine {
         this.set({ studioMode: event.enabled });
         break;
       case "programScene":
+        // During an effect the real program is the helper "MK FX" scene; the engine keeps showing the cam.
+        if (this.fxBusy()) break;
         this.set({
           programScene: event.scene,
           program: this.camForScene(event.scene),
@@ -278,6 +286,7 @@ export class SwitcherEngine {
         break;
       case "transition":
         // The transport reports when a transition ends (auto take, OBS itself).
+        if (this.fxBusy()) break;
         if (!event.active && !this.tbarHeld) this.finishTransition();
         break;
       case "dsk": {
@@ -332,14 +341,18 @@ export class SwitcherEngine {
   // --------------------------------------------------------------- switching
 
   async selectPreview(cam: CamIndex) {
+    if (this.state.fx.running) return;
     const scene = this.sceneForCam(cam);
     this.set({ preview: cam, previewScene: scene });
     if (!scene || !this.transport) return;
     await this.transport.setPreviewScene(scene).catch(() => {});
+    // PiP / Merge held: the inset (right half) follows the preview bus live.
+    if (this.state.fx.layout && this.fxHold && scene !== this.fxHold.a && scene !== this.fxHold.b) await this.fxRetarget(scene);
   }
 
   /** Direct-to-air override (program bus). */
   async selectProgram(cam: CamIndex) {
+    if (this.fxGuard()) return;
     const scene = this.sceneForCam(cam);
     this.set({ program: cam, programScene: scene });
     this.applyAfv();
@@ -553,6 +566,7 @@ export class SwitcherEngine {
   }
 
   async cut() {
+    if (this.fxGuard()) return;
     if (this.state.preview === null && !this.state.previewScene) return;
     this.stopAnim();
     this.tbarHeld = false;
@@ -563,6 +577,7 @@ export class SwitcherEngine {
   }
 
   async autoTake() {
+    if (this.fxGuard()) return;
     if (this.state.preview === null && !this.state.previewScene) return;
     if (this.state.transitioning) return;
     const isCut = this.state.config.transition === "Cut";
@@ -598,6 +613,7 @@ export class SwitcherEngine {
 
   /** Manual T-bar. `release` is true on pointer-up. */
   setTBar(position: number, release = false) {
+    if (this.fxGuard()) return;
     const p = Math.min(1, Math.max(0, position));
     if (!release) {
       this.tbarHeld = true;
@@ -639,6 +655,182 @@ export class SwitcherEngine {
       this.set({ tBar: p, transitioning: true });
       void this.transport?.setTBarPosition(p, false).catch(() => {});
     }
+  }
+
+  // ------------------------------------------------------- picture effects
+  // Squeeze / PiP / Merge run in OBS's helper scene "MK FX" (see fx.ts): program is cut to it, the
+  // nested camera scenes are animated, then program is cut to the real cam scene (identical picture).
+
+  private fxBusy() {
+    return this.state.fx.running || this.state.fx.layout !== null;
+  }
+
+  /** True when the console must ignore a switching action (and says why when it is a held layout). */
+  private fxGuard() {
+    if (this.state.fx.running) return true;
+    if (this.state.fx.layout) {
+      this.notice(`Close ${this.state.fx.layout.toUpperCase()} first`);
+      return true;
+    }
+    return false;
+  }
+
+  /** Effects need two different mapped cams: PGM and PVW. */
+  private fxScenes(): { a: string; b: string } | null {
+    if (!this.transport) {
+      this.notice("Not connected");
+      return null;
+    }
+    const a = this.state.programScene;
+    const b = this.state.previewScene;
+    if (!a || !b || a === b || this.camForScene(a) === null || this.camForScene(b) === null) {
+      this.notice("Effects need two different mapped cams: one on PGM, one on PVW");
+      return null;
+    }
+    return { a, b };
+  }
+
+  private fxCams() {
+    return this.state.config.camScenes.filter((s): s is string => !!s);
+  }
+
+  private fxLayoutFrame(kind: FxLayoutKind, t: number, w: number, h: number): FxPair {
+    const { pipCorner, pipSize } = this.state.config.fx;
+    return kind === "pip" ? pipFrame(pipCorner, pipSize, t, w, h) : mergeFrame(t, w, h);
+  }
+
+  private async fxDraw(pair: { a: string; b: string }, frame: FxPair) {
+    const all: Record<string, FxRect | null> = {};
+    for (const cam of this.fxCams()) all[cam] = null;
+    all[pair.a] = frame.a;
+    all[pair.b] = frame.b;
+    await this.transport?.fxFrame(all);
+  }
+
+  /** Runs `draw` from 0 to 1 over `ms`. Each frame waits for OBS to confirm the last one, so it never piles up. */
+  private async fxAnimate(ms: number, draw: (eased: number) => Promise<void>, onRaw?: (raw: number) => void) {
+    const start = performance.now();
+    for (;;) {
+      const raw = Math.min(1, (performance.now() - start) / Math.max(1, ms));
+      onRaw?.(raw);
+      await draw(ease(raw));
+      if (raw >= 1) return;
+      await new Promise((r) => setTimeout(r, 12));
+    }
+  }
+
+  private fxLeave() {
+    setTimeout(() => void this.transport?.resync().catch(() => {}), 200);
+  }
+
+  /** Squeeze: the PGM picture is squeezed away, the PVW picture squeezes in. Ends with PVW on air (like a take). */
+  async squeeze() {
+    if (this.fxGuard()) return;
+    const pair = this.fxScenes();
+    const t = this.transport;
+    if (!pair || !t) return;
+    const dir = this.state.config.fx.squeezeDir;
+    const ms = Math.max(250, this.state.config.transitionDuration);
+    this.set({ fx: { running: true, layout: null }, transitioning: true, tBar: 0 });
+    let onAir = false;
+    try {
+      const { width: W, height: H } = await t.fxStage(this.fxCams(), pair.a, pair.b);
+      await this.fxDraw(pair, squeezeFrame(dir, 0, W, H));
+      await t.fxCutTo(FX_SCENE);
+      onAir = true;
+      await this.fxAnimate(
+        ms,
+        (e) => this.fxDraw(pair, squeezeFrame(dir, e, W, H)),
+        (raw) => this.set({ tBar: raw }),
+      );
+      await this.fxDraw(pair, squeezeFrame(dir, 1, W, H));
+      await t.fxCutTo(pair.b);
+      onAir = false;
+      await t.setPreviewScene(pair.a).catch(() => {});
+      this.swapLocal();
+    } catch {
+      this.notice("Squeeze failed — check OBS");
+      if (onAir) await t.fxCutTo(pair.a).catch(() => {});
+    } finally {
+      this.set({ fx: { running: false, layout: null }, tBar: 0, transitioning: false });
+      this.fxLeave();
+    }
+  }
+
+  /** PiP / Merge: tap to bring it on (PVW cam as inset / right half over PGM), tap again to take it off. */
+  async toggleLayout(kind: FxLayoutKind) {
+    const { running, layout } = this.state.fx;
+    if (running) return;
+    if (layout === kind) return this.closeLayout();
+    if (layout) {
+      this.notice(`Close ${layout.toUpperCase()} first`);
+      return;
+    }
+    const pair = this.fxScenes();
+    const t = this.transport;
+    if (!pair || !t) return;
+    const ms = Math.max(250, this.state.config.transitionDuration);
+    this.set({ fx: { running: true, layout: null } });
+    let onAir = false;
+    try {
+      const { width: w, height: h } = await t.fxStage(this.fxCams(), pair.a, pair.b);
+      await this.fxDraw(pair, this.fxLayoutFrame(kind, 0, w, h));
+      await t.fxCutTo(FX_SCENE);
+      onAir = true;
+      await this.fxAnimate(ms, (e) => this.fxDraw(pair, this.fxLayoutFrame(kind, e, w, h)));
+      this.fxHold = { ...pair, w, h };
+      this.set({ fx: { running: false, layout: kind } });
+    } catch {
+      this.notice(`${kind.toUpperCase()} failed — check OBS`);
+      if (onAir) await t.fxCutTo(pair.a).catch(() => {});
+      this.fxHold = null;
+      this.set({ fx: { running: false, layout: null } });
+      this.fxLeave();
+    }
+  }
+
+  private async closeLayout() {
+    const kind = this.state.fx.layout;
+    const hold = this.fxHold;
+    const t = this.transport;
+    if (!kind || !hold || !t) {
+      this.fxHold = null;
+      this.set({ fx: { running: false, layout: null } });
+      return;
+    }
+    const ms = Math.max(250, this.state.config.transitionDuration);
+    this.set({ fx: { running: true, layout: kind } });
+    try {
+      await this.fxAnimate(ms, (e) => this.fxDraw(hold, this.fxLayoutFrame(kind, 1 - e, hold.w, hold.h)));
+      await this.fxDraw(hold, this.fxLayoutFrame(kind, 0, hold.w, hold.h));
+      await t.fxCutTo(hold.a);
+    } catch {
+      this.notice("Could not close the effect cleanly — pick a cam on PGM");
+      await t.fxCutTo(hold.a).catch(() => {});
+    } finally {
+      this.fxHold = null;
+      this.set({ fx: { running: false, layout: null } });
+      this.fxLeave();
+    }
+  }
+
+  /** Swap which cam is the inset / right half while PiP / Merge is held. */
+  private async fxRetarget(scene: string) {
+    const hold = this.fxHold;
+    const kind = this.state.fx.layout;
+    const t = this.transport;
+    if (!hold || !kind || !t) return;
+    this.fxHold = { ...hold, b: scene };
+    try {
+      await t.fxStage(this.fxCams(), hold.a, scene);
+      await this.fxDraw({ a: hold.a, b: scene }, this.fxLayoutFrame(kind, 1, hold.w, hold.h));
+    } catch {
+      this.notice("Could not change the inset cam");
+    }
+  }
+
+  setFx(patch: Partial<FxConfig>) {
+    this.updateConfig({ fx: { ...this.state.config.fx, ...patch } });
   }
 
   // --------------------------------------------------------------------- DSK

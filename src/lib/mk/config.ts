@@ -1,4 +1,5 @@
 // Local-only configuration persistence. OBS credentials never leave the device.
+import { DEFAULT_FX, PIP_CORNERS, SQUEEZE_DIRS, type FxConfig } from "./fx";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -93,6 +94,15 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
   };
 }
 
+function mergeFx(raw: unknown): FxConfig {
+  const r = (raw ?? {}) as Partial<FxConfig>;
+  return {
+    pipCorner: PIP_CORNERS.includes(r.pipCorner as never) ? (r.pipCorner as FxConfig["pipCorner"]) : DEFAULT_FX.pipCorner,
+    pipSize: typeof r.pipSize === "number" ? Math.min(0.5, Math.max(0.15, r.pipSize)) : DEFAULT_FX.pipSize,
+    squeezeDir: SQUEEZE_DIRS.includes(r.squeezeDir as never) ? (r.squeezeDir as FxConfig["squeezeDir"]) : DEFAULT_FX.squeezeDir,
+  };
+}
+
 export function loadConfig(): MkConfig {
   if (typeof window === "undefined") return DEFAULT_CONFIG;
   try {
@@ -131,6 +141,7 @@ export function loadConfig(): MkConfig {
               secs: typeof i.secs === "number" && i.secs > 0 ? Math.min(Math.round(i.secs), 86_400) : 0,
             }))
         : [],
+      fx: mergeFx((parsed as { fx?: unknown }).fx),
       hiddenAudio: Array.isArray(parsed.hiddenAudio) ? parsed.hiddenAudio.filter((n): n is string => typeof n === "string") : [],
       limiter: {
         on: typeof parsed.limiter?.on === "boolean" ? parsed.limiter.on : DEFAULT_LIMITER.on,
