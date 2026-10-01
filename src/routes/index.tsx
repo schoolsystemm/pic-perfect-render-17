@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { AudioMixer } from "@/components/mk/audio-mixer";
@@ -45,10 +45,29 @@ function Switcher() {
   useShortcuts(state.config.shortcuts);
   const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, audio: true, graphics: true, sounds: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
+  const bottom = show.audio || show.graphics || show.sounds;
+
+  const menus = (["multiview", "audio", "graphics", "sounds"] as Panel[]).map((p) => (
+    <button
+      key={p}
+      type="button"
+      onClick={() => toggle(p)}
+      aria-pressed={show[p]}
+      className={cn("mk-button h-7 shrink-0 rounded-[3px] px-2 text-[9px] tracking-[0.12em]", show[p] && "text-foreground")}
+    >
+      {PANEL_LABEL[p]} {show[p] ? "▾" : "▸"}
+    </button>
+  ));
 
   return (
     <div className="mk-chassis flex h-[100dvh] flex-col overflow-hidden">
-      <StatusBar status={state.status} statusMessage={state.statusMessage} demo={state.demo} />
+      <StatusBar
+        status={state.status}
+        statusMessage={state.statusMessage}
+        demo={state.demo}
+        menus={menus}
+        listen={<ListenControl config={state.config} />}
+      />
       <ReconnectOverlay
         status={state.status}
         message={state.statusMessage}
@@ -56,24 +75,11 @@ function Switcher() {
         onRetry={() => void engine.connect()}
       />
 
-      <div className="flex gap-1.5 border-b border-border px-2 py-1 phone-land:py-0.5">
-        {(["multiview", "audio", "graphics", "sounds"] as Panel[]).map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => toggle(p)}
-            className={cn("mk-button h-7 rounded-sm px-2 text-[10px]", show[p] && "text-foreground")}
-          >
-            {PANEL_LABEL[p]} {show[p] ? "▾" : "▸"}
-          </button>
-        ))}
-        <ListenControl config={state.config} />
-      </div>
-
-      <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 sm:flex-row sm:gap-3 sm:p-3 phone-land:flex-row phone-land:gap-2 phone-land:p-1.5">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 sm:gap-3 phone-land:gap-1.5">
+      {/* Console: one screen, nothing scrolls. Below 900px wide it falls back to a scrolling stack. */}
+      <main className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5 fit:flex-row fit:overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
           {show.multiview && (
-            <div className="shrink-0 phone-land:hidden">
+            <div className="min-h-0 shrink-0 fit:flex-1">
               <Multiview
                 program={state.program}
                 preview={state.preview}
@@ -106,31 +112,50 @@ function Switcher() {
             camScenes={state.config.camScenes}
             onSelect={(cam) => void engine.selectPreview(cam)}
           />
-          {show.graphics && <GraphicsPanel graphics={state.config.graphics} active={state.gfxActive} />}
-          {show.sounds && (
-            <div>
-              <SoundPad />
-              <Link to="/sounds" className="mk-label mt-1 inline-block px-1 text-[9px] underline">Manage sounds</Link>
+          {bottom && (
+            <div
+              className={cn(
+                "flex min-h-0 shrink-0 flex-col gap-1.5 fit:flex-row",
+                show.multiview ? "fit:h-[clamp(190px,29vh,270px)]" : "fit:flex-1",
+              )}
+            >
+              {show.audio && (
+                <div className="h-56 min-w-0 fit:h-auto fit:flex-1">
+                  <AudioMixer
+                    channels={state.audio}
+                    levels={state.levels}
+                    afv={state.config.audioFollowVideo}
+                    limiter={state.config.limiter}
+                    gr={state.gr}
+                    masterMuted={state.masterMuted}
+                    camOf={(name) => engine.audioCam(name)}
+                    onVolume={(name, db) => void engine.setAudioVolume(name, db)}
+                    onMute={(name) => void engine.toggleAudioMute(name)}
+                    onMonitor={(name) => void engine.cycleAudioMonitor(name)}
+                    onStream={(name) => void engine.toggleAudioStream(name)}
+                    onPre={(name) => void engine.toggleAudioPre(name)}
+                    onHearFinal={(on) => void engine.hearFinalInPre(on)}
+                    onAfv={(on) => engine.setAudioFollowVideo(on)}
+                    onLimiter={(patch) => engine.setLimiter(patch)}
+                    onMuteOut={() => void engine.toggleMasterMute()}
+                  />
+                </div>
+              )}
+              {show.graphics && (
+                <div className="min-w-0 fit:w-[16rem] fit:shrink-0">
+                  <GraphicsPanel graphics={state.config.graphics} active={state.gfxActive} />
+                </div>
+              )}
+              {show.sounds && (
+                <div className="h-32 min-w-0 fit:h-auto fit:w-[13.5rem] fit:shrink-0">
+                  <SoundPad />
+                </div>
+              )}
             </div>
-          )}
-          {show.audio && (
-            <AudioMixer
-              channels={state.audio}
-              levels={state.levels}
-              afv={state.config.audioFollowVideo}
-              camOf={(name) => engine.audioCam(name)}
-              onVolume={(name, db) => void engine.setAudioVolume(name, db)}
-              onMute={(name) => void engine.toggleAudioMute(name)}
-              onMonitor={(name) => void engine.cycleAudioMonitor(name)}
-              onStream={(name) => void engine.toggleAudioStream(name)}
-              onPre={(name) => void engine.toggleAudioPre(name)}
-              onHearFinal={(on) => void engine.hearFinalInPre(on)}
-              onAfv={(on) => engine.setAudioFollowVideo(on)}
-            />
           )}
         </div>
 
-        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-60 sm:gap-3 phone-land:w-48 phone-land:gap-1.5">
+        <div className="flex w-full shrink-0 flex-col gap-1.5 fit:min-h-0 fit:w-[15rem]">
           <OutputControls
             stream={state.stream}
             record={state.record}
@@ -158,9 +183,7 @@ function Switcher() {
       </main>
       {state.notice && (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-3">
-          <div className="mk-panel rounded-md border-amber px-3 py-2 font-mono text-xs text-amber">
-            {state.notice}
-          </div>
+          <div className="mk-panel rounded-md border-amber px-3 py-2 font-mono text-xs text-amber">{state.notice}</div>
         </div>
       )}
     </div>
