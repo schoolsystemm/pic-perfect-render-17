@@ -407,6 +407,12 @@ function GraphicsPage() {
                       <option value="right">Left → Right</option>
                     </select>
                   </Row>
+                  <Row label="Run">
+                    <select className={field} value={c.ticker.loop ? "loop" : "once"} onChange={(e) => edit("ticker", { loop: e.target.value === "loop" })}>
+                      <option value="loop">Repeat forever</option>
+                      <option value="once">One pass, then leave</option>
+                    </select>
+                  </Row>
                   <Row label="Bar position">
                     <select className={field} value={c.ticker.pos} onChange={(e) => edit("ticker", { pos: e.target.value as "top" | "bottom" })}>
                       <option value="bottom">Bottom</option>
