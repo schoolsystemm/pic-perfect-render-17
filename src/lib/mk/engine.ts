@@ -4,7 +4,31 @@
 // exact same functions later.
 import { loadConfig, saveConfig } from "./config";
 import { DemoTransport } from "./demo-transport";
-import { FX_SCENE, ease, mergeFrame, pipFrame, squeezeFrame, type FxConfig, type FxLayoutKind, type FxPair, type FxRect } from "./fx";
+import {
+  FULL_RECT,
+  FX_SCENE,
+  LIVE_BUSES,
+  PIP_SCENES,
+  ease,
+  isLiveBus,
+  lerpRect,
+  mergeFrame,
+  moveFrame,
+  pipAt,
+  pipFrame,
+  pipRect,
+  placeIn,
+  sqmRest,
+  sqmTargets,
+  squeezeFrame,
+  type AdConfig,
+  type FxConfig,
+  type FxLayoutKind,
+  type FxPair,
+  type FxRect,
+  type PipSlot,
+  type SqueezeDir,
+} from "./fx";
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import type { Transport, TransportEvent } from "./transport";
@@ -15,12 +39,14 @@ import {
   FADER_MAX,
   FADER_MIN,
   IDLE_GFX,
+  IDLE_LIVE,
   IDLE_OUTPUT,
   type CamIndex,
   type DskTarget,
   type GfxId,
   type GraphicsConfig,
   type LimiterConfig,
+  type LiveState,
   type MkConfig,
   type MonitorType,
   type OutputState,
@@ -48,6 +74,7 @@ function initialState(config: MkConfig): SwitcherState {
     tBar: 0,
     transitioning: false,
     fx: { running: false, layout: null },
+    live: IDLE_LIVE,
     scenes: [],
     transitions: [],
     studioMode: false,
@@ -85,6 +112,9 @@ export class SwitcherEngine {
   private booted = false;
   /** While PiP / Merge is held on air: the two scenes involved and the canvas size. */
   private fxHold: { a: string; b: string; w: number; h: number } | null = null;
+  /** While OBS program is an MK LIVE bus: which cam scene each bus shows, and the canvas size. */
+  private live: { mains: Record<string, string>; w: number; h: number } | null = null;
+  private recovering = false;
 
   /** Hydrate stored config on the client. Safe to call repeatedly. */
   boot() {
@@ -199,7 +229,9 @@ export class SwitcherEngine {
   async connect() {
     await this.teardown();
     this.fxHold = null;
-    this.set({ fx: { running: false, layout: null } });
+    this.live = null;
+    this.recovering = false;
+    this.set({ fx: { running: false, layout: null }, live: IDLE_LIVE });
     const { demoMode, host, port, password } = this.state.config;
     if (!demoMode && !host) {
       this.set({ status: "error", statusMessage: "NO HOST CONFIGURED" });
@@ -284,7 +316,7 @@ export class SwitcherEngine {
         break;
       }
       case "scenes":
-        this.set({ scenes: event.scenes });
+        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !(PIP_SCENES as string[]).includes(n)) });
         break;
       case "transitions":
         this.set({ transitions: event.transitions });
@@ -295,6 +327,23 @@ export class SwitcherEngine {
       case "programScene":
         // During an effect the real program is the helper "MK FX" scene; the engine keeps showing the cam.
         if (this.fxBusy()) break;
+        if (this.live) {
+          const main = this.live.mains[event.scene];
+          if (main) {
+            this.setLive({ progBus: event.scene, previewBus: this.otherBus(event.scene) });
+            this.set({ programScene: main, program: this.camForScene(main) });
+            this.applyAfv();
+            if (this.state.config.dsks.some((d) => d.source && !d.scene)) void this.syncDsks();
+            break;
+          }
+          // OBS itself left the live buses (operator picked a plain scene in OBS): follow it.
+          this.live = null;
+          this.setLive(IDLE_LIVE);
+        } else if (isLiveBus(event.scene)) {
+          // OBS is already on a live bus (controller reconnected / reloaded): rebuild the live state from OBS.
+          void this.recoverLive(event.scene);
+          break;
+        }
         this.set({
           programScene: event.scene,
           program: this.camForScene(event.scene),
@@ -304,6 +353,17 @@ export class SwitcherEngine {
         if (this.state.config.dsks.some((d) => d.source && !d.scene)) void this.syncDsks();
         break;
       case "previewScene":
+        if (this.live) {
+          const main = this.live.mains[event.scene];
+          if (main) {
+            this.setLive({ previewBus: event.scene });
+            this.set({ previewScene: main, preview: this.camForScene(main) });
+          } else if (!this.state.fx.running && this.camForScene(event.scene) !== null) {
+            // A plain scene was picked as preview inside OBS: route it into the free live bus so PIPs stay on.
+            void this.liveRetarget(event.scene);
+          }
+          break;
+        }
         this.set({
           previewScene: event.scene,
           preview: this.camForScene(event.scene),
@@ -322,6 +382,18 @@ export class SwitcherEngine {
         if (this.fxBusy()) break;
         if (!event.active && !this.tbarHeld) this.finishTransition();
         break;
+      case "liveItem": {
+        if (!this.live || this.state.fx.running || event.scene !== this.progBus()) break;
+        const slot = (PIP_SCENES as string[]).indexOf(event.source);
+        if (slot >= 0) {
+          const pip = [...this.state.live.pip];
+          pip[slot] = event.on;
+          this.setLive({ pip });
+        } else if (event.source === this.state.config.ad.scene) {
+          this.setLive({ sqm: event.on });
+        }
+        break;
+      }
       case "dsk": {
         const dskActive = [...this.state.dskActive];
         dskActive[event.index] = event.on;
@@ -378,6 +450,10 @@ export class SwitcherEngine {
     const scene = this.sceneForCam(cam);
     this.set({ preview: cam, previewScene: scene });
     if (!scene) return;
+    if (this.live) {
+      await this.liveRetarget(scene);
+      return;
+    }
     const ok = await this.send("Preview", (t) => t.setPreviewScene(scene));
     if (!ok) return;
     // PiP / Merge held: the inset (right half) follows the preview bus live.
@@ -391,6 +467,17 @@ export class SwitcherEngine {
     this.set({ program: cam, programScene: scene });
     this.applyAfv();
     if (!scene) return;
+    if (this.live) {
+      // PIPs / ad stay up: swap the main picture inside the program bus (hard cut).
+      const live = this.live;
+      const bus = this.progBus();
+      await this.send("Program", async (t) => {
+        live.mains[bus] = scene;
+        await t.fxStage(this.fxCams(), scene, scene, bus);
+        await this.liveDrawMain(bus, scene);
+      });
+      return;
+    }
     await this.send("Program", (t) => t.setProgramScene(scene));
   }
 
@@ -734,12 +821,13 @@ export class SwitcherEngine {
     return kind === "pip" ? pipFrame(pipCorner, pipSize, t, w, h) : mergeFrame(t, w, h);
   }
 
-  private async fxDraw(pair: { a: string; b: string }, frame: FxPair) {
+  private async fxDraw(pair: { a: string; b: string }, frame: FxPair, bus?: string, place?: FxRect) {
     const all: Record<string, FxRect | null> = {};
     for (const cam of this.fxCams()) all[cam] = null;
-    all[pair.a] = frame.a;
-    all[pair.b] = frame.b;
-    await this.transport?.fxFrame(all);
+    const put = (r: FxRect | null) => (r && place ? placeIn(r, place) : r);
+    all[pair.a] = put(frame.a);
+    all[pair.b] = put(frame.b);
+    await this.transport?.fxFrame(all, bus);
   }
 
   /** Runs `draw` from 0 to 1 over `ms`. Each frame waits for OBS to confirm the last one, so it never piles up. */
@@ -760,32 +848,64 @@ export class SwitcherEngine {
 
   /** Squeeze: the PGM picture is squeezed away, the PVW picture squeezes in. Ends with PVW on air (like a take). */
   async squeeze() {
+    const dir = this.state.config.fx.squeezeDir;
+    await this.pairEffect("Squeeze", (e, W, H) => squeezeFrame(dir, e, W, H));
+  }
+
+  /** Move: the PGM picture is pushed off the screen and the PVW picture slides in. Ends with PVW on air. */
+  async moveTake(dir: SqueezeDir) {
+    await this.pairEffect("Move", (e, W, H) => moveFrame(dir, e, W, H));
+  }
+
+  /**
+   * One PGM -> PVW picture effect, driven frame by frame on real OBS scene items. With PIP / Squeeze Merge
+   * up it runs INSIDE the live bus, so PIPs and the advertisement never blink; otherwise in "MK FX".
+   */
+  private async pairEffect(label: string, at: (t: number, W: number, H: number) => FxPair) {
     if (this.fxGuard()) return;
     const pair = this.fxScenes();
     const t = this.transport;
     if (!pair || !t) return;
-    const dir = this.state.config.fx.squeezeDir;
     const ms = Math.max(250, this.state.config.transitionDuration);
     this.set({ fx: { running: true, layout: null }, transitioning: true, tBar: 0 });
+    const live = this.live;
+    const bus = live ? this.progBus() : undefined;
     let onAir = false;
     try {
-      const { width: W, height: H } = await t.fxStage(this.fxCams(), pair.a, pair.b);
-      await this.fxDraw(pair, squeezeFrame(dir, 0, W, H));
-      await t.fxCutTo(FX_SCENE);
-      onAir = true;
-      await this.fxAnimate(
-        ms,
-        (e) => this.fxDraw(pair, squeezeFrame(dir, e, W, H)),
-        (raw) => this.set({ tBar: raw }),
-      );
-      await this.fxDraw(pair, squeezeFrame(dir, 1, W, H));
-      await t.fxCutTo(pair.b);
-      onAir = false;
-      await t.setPreviewScene(pair.a).catch(() => {});
-      this.swapLocal();
-    } catch {
-      this.notice("Squeeze failed — check OBS");
-      if (onAir) await t.fxCutTo(pair.a).catch(() => {});
+      if (live && bus) {
+        const { width: W, height: H } = await t.fxStage(this.fxCams(), pair.a, pair.b, bus);
+        const region = this.mainRegion();
+        const draw = (e: number) => this.fxDraw(pair, at(e, W, H), bus, region);
+        await draw(0);
+        await this.fxAnimate(ms, draw, (raw) => this.set({ tBar: raw }));
+        await draw(1);
+        live.mains[bus] = pair.b;
+        const free = this.otherBus(bus);
+        live.mains[free] = pair.a;
+        await t.fxStage(this.fxCams(), pair.a, pair.a, free);
+        await this.liveDrawMain(free, pair.a);
+        this.swapLocal();
+      } else {
+        const { width: W, height: H } = await t.fxStage(this.fxCams(), pair.a, pair.b);
+        await this.fxDraw(pair, at(0, W, H));
+        await t.fxCutTo(FX_SCENE);
+        onAir = true;
+        await this.fxAnimate(
+          ms,
+          (e) => this.fxDraw(pair, at(e, W, H)),
+          (raw) => this.set({ tBar: raw }),
+        );
+        await this.fxDraw(pair, at(1, W, H));
+        await t.fxCutTo(pair.b);
+        onAir = false;
+        await t.setPreviewScene(pair.a).catch(() => {});
+        this.swapLocal();
+      }
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`${label} failed — check OBS${why}`);
+      if (live && bus) await this.liveDrawMain(bus, live.mains[bus] ?? pair.a).catch(() => {});
+      else if (onAir) await t.fxCutTo(pair.a).catch(() => {});
     } finally {
       this.set({ fx: { running: false, layout: null }, tBar: 0, transitioning: false });
       this.fxLeave();
@@ -796,6 +916,10 @@ export class SwitcherEngine {
   async toggleLayout(kind: FxLayoutKind) {
     const { running, layout } = this.state.fx;
     if (running) return;
+    if (this.live) {
+      this.notice("Turn off PIP 1 / PIP 2 / Squeeze Merge first");
+      return;
+    }
     if (layout === kind) return this.closeLayout();
     if (layout) {
       this.notice(`Close ${layout.toUpperCase()} first`);
@@ -862,6 +986,415 @@ export class SwitcherEngine {
     } catch {
       this.notice("Could not change the inset cam");
     }
+  }
+
+  // ------------------------------------------------------------ live compositor
+  // Persistent PIP 1 / PIP 2, Squeeze Merge and the advertisement. Everything is real OBS scene items in the
+  // MK LIVE A / MK LIVE B buses (see fx.ts); each action is read back from OBS before the lamp stays lit.
+
+  private setLive(patch: Partial<LiveState>) {
+    this.set({ live: { ...this.state.live, ...patch } });
+  }
+
+  private progBus(): string {
+    return this.state.live.progBus ?? LIVE_BUSES[0];
+  }
+
+  private otherBus(bus: string): string {
+    return bus === LIVE_BUSES[0] ? LIVE_BUSES[1] : LIVE_BUSES[0];
+  }
+
+  private adTargets(cfg: AdConfig = this.state.config.ad) {
+    const { w, h } = this.live ?? { w: 1920, h: 1080 };
+    const end = sqmTargets(cfg.layout, cfg.size, w, h);
+    const rest = sqmRest(cfg.layout, cfg.size, w, h);
+    const fill = cfg.fit === "fill";
+    return { end: { main: end.main, ad: { ...end.ad, fill } }, rest: { main: rest.main, ad: { ...rest.ad, fill } } };
+  }
+
+  /** Where the program picture sits right now: full screen, or squeezed while the advertisement is in. */
+  private mainRegion(): FxRect {
+    return this.state.live.sqm && this.live ? this.adTargets().end.main : FULL_RECT;
+  }
+
+  /** Item names that live above the cams in every bus: advertisement first (lowest), then PIP 1, PIP 2. */
+  private overlaySources(): string[] {
+    const ad = this.state.config.ad.scene;
+    return [...(ad ? [ad] : []), ...PIP_SCENES];
+  }
+
+  private async liveDrawMain(bus: string, cam: string, region: FxRect = this.mainRegion()) {
+    const frame: Record<string, FxRect | null> = {};
+    for (const c of this.fxCams()) frame[c] = c === cam ? region : null;
+    await this.transport?.fxFrame(frame, bus);
+  }
+
+  /** Final (resting) PIP / ad placement in one bus. */
+  private async liveDrawOverlays(bus: string) {
+    const live = this.live;
+    if (!live) return;
+    const { pips, ad } = this.state.config;
+    const frame: Record<string, FxRect | null> = {};
+    pips.forEach((p, i) => {
+      frame[PIP_SCENES[i]!] = this.state.live.pip[i] ? pipRect(p.corner, p.size, live.w, live.h) : null;
+    });
+    if (ad.scene) frame[ad.scene] = this.state.live.sqm ? this.adTargets().end.ad : null;
+    await this.transport?.fxFrame(frame, bus);
+  }
+
+  /** The bus that is NOT on air must look exactly like the one that is (same overlays, same layout). */
+  private async liveSyncFree() {
+    const live = this.live;
+    if (!live) return;
+    const free = this.otherBus(this.progBus());
+    const main = live.mains[free];
+    if (main) await this.liveDrawMain(free, main);
+    await this.liveDrawOverlays(free);
+  }
+
+  /** Put a plain cam scene on the preview bus (PIPs / ad stay up through the next take). */
+  private async liveRetarget(scene: string) {
+    const live = this.live;
+    const t = this.transport;
+    if (!live || !t) return;
+    const free = this.otherBus(this.progBus());
+    this.set({ preview: this.camForScene(scene), previewScene: scene });
+    try {
+      live.mains[free] = scene;
+      await t.fxStage(this.fxCams(), scene, scene, free);
+      await this.liveDrawMain(free, scene);
+      await t.setPreviewScene(free);
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`Preview: OBS did not apply it${why}`);
+      void t.resync().catch(() => {});
+    }
+  }
+
+  /** Switch OBS program to the live bus showing the current PGM cam (identical picture), preview to the other bus. */
+  private async enterLive(): Promise<boolean> {
+    const t = this.transport;
+    if (!t || this.state.status !== "connected") {
+      this.notice("Not sent — OBS is not connected");
+      return false;
+    }
+    const prog = this.state.programScene;
+    if (!prog || this.camForScene(prog) === null) {
+      this.notice("PIP / Squeeze Merge need a mapped cam on PGM");
+      return false;
+    }
+    const pv = this.state.previewScene;
+    const prev = pv && this.camForScene(pv) !== null ? pv : prog;
+    const [A, B] = LIVE_BUSES;
+    this.set({ fx: { running: true, layout: null } });
+    try {
+      const cams = this.fxCams();
+      for (let i = 0; i < PIP_SCENES.length; i++) await t.pipAssign(i, this.state.config.pips[i]?.scene ?? null);
+      const { width, height } = await t.fxStage(cams, prog, prog, A);
+      await t.fxStage(cams, prev, prev, B);
+      const overlays = this.overlaySources();
+      await t.liveEnsure(A, overlays);
+      await t.liveEnsure(B, overlays);
+      this.live = { mains: { [A]: prog, [B]: prev }, w: width, h: height };
+      await this.liveDrawMain(A, prog, FULL_RECT);
+      await this.liveDrawMain(B, prev, FULL_RECT);
+      await t.fxCutTo(A);
+      await t.setPreviewScene(B);
+      this.setLive({ on: true, pip: [false, false], sqm: false, progBus: A, previewBus: B });
+      return true;
+    } catch (error) {
+      this.live = null;
+      this.setLive(IDLE_LIVE);
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`Live mode: OBS refused${why}`);
+      void t.resync().catch(() => {});
+      return false;
+    } finally {
+      this.set({ fx: { running: false, layout: null } });
+      this.fxLeave();
+    }
+  }
+
+  /** Nothing live is on any more: hand OBS program back to the plain cam scene (same picture). */
+  private async exitLive() {
+    const live = this.live;
+    const t = this.transport;
+    if (!live || !t) return;
+    const cam = live.mains[this.progBus()];
+    const pv = this.state.previewScene;
+    this.set({ fx: { running: true, layout: null } });
+    this.live = null;
+    try {
+      if (cam) await t.fxCutTo(cam);
+      await t.setPreviewScene(pv ?? cam ?? "");
+    } catch {
+      this.notice("Could not leave live mode cleanly — pick a cam on PGM");
+    } finally {
+      this.setLive(IDLE_LIVE);
+      this.set({ fx: { running: false, layout: null } });
+      this.fxLeave();
+    }
+  }
+
+  private async maybeExitLive() {
+    const { live, fx, transitioning } = this.state;
+    if (this.live && !fx.running && !transitioning && !live.sqm && !live.pip.some(Boolean)) await this.exitLive();
+  }
+
+  /** OBS was already on a live bus when we connected: rebuild the controller's live state from OBS. */
+  private async recoverLive(bus: string) {
+    const t = this.transport;
+    if (!t || this.recovering) return;
+    this.recovering = true;
+    try {
+      const cams = this.fxCams();
+      if (!cams.length) throw new Error("no cams mapped");
+      const [A, B] = LIVE_BUSES;
+      const [ra, rb] = await Promise.all([t.liveRead(A), t.liveRead(B)]);
+      const pick = (r: Record<string, boolean>) => cams.find((c) => r[c]) ?? cams[0]!;
+      const mainA = pick(ra);
+      const mainB = pick(rb);
+      const { width, height } = await t.fxStage(cams, mainA, mainA, A);
+      await t.fxStage(cams, mainB, mainB, B);
+      const overlays = this.overlaySources();
+      await t.liveEnsure(A, overlays);
+      await t.liveEnsure(B, overlays);
+      this.live = { mains: { [A]: mainA, [B]: mainB }, w: width, h: height };
+      const cur = bus === A ? ra : rb;
+      const ad = this.state.config.ad.scene;
+      const main = bus === A ? mainA : mainB;
+      this.set({
+        programScene: main,
+        program: this.camForScene(main),
+        live: { on: true, pip: PIP_SCENES.map((n) => !!cur[n]), sqm: !!(ad && cur[ad]), progBus: bus, previewBus: this.otherBus(bus) },
+      });
+      void t.resync().catch(() => {});
+    } catch {
+      // Cannot rebuild it: put OBS back on a plain scene so the controller and OBS agree.
+      this.notice("OBS was on a live layout the controller could not read — pick a cam on PGM");
+    } finally {
+      this.recovering = false;
+    }
+  }
+
+  /** PIP n on / off. The scene stays assigned; only visibility changes. Lamp follows OBS, not the click. */
+  async togglePip(slot: number) {
+    if (this.state.fx.running) return;
+    if (this.state.fx.layout) {
+      this.notice(`Close ${this.state.fx.layout.toUpperCase()} first`);
+      return;
+    }
+    const cfg = this.state.config.pips[slot];
+    const name = PIP_SCENES[slot];
+    if (!cfg || !name) return;
+    const turningOn = !this.state.live.pip[slot];
+    if (turningOn && !cfg.scene) {
+      this.notice(`PIP ${slot + 1}: assign a scene first (Live FX panel)`);
+      return;
+    }
+    if (turningOn && !this.live && !(await this.enterLive())) return;
+    const t = this.transport;
+    const live = this.live;
+    if (!t || !live) return;
+    const bus = this.progBus();
+    const ms = Math.min(800, Math.max(250, this.state.config.transitionDuration));
+    this.set({ fx: { running: true, layout: null } });
+    try {
+      if (turningOn) {
+        await t.pipAssign(slot, cfg.scene);
+        const overlays = this.overlaySources();
+        await t.liveEnsure(bus, overlays);
+        await t.liveEnsure(this.otherBus(bus), overlays);
+      }
+      await this.fxAnimate(ms, (e) => t.fxFrame({ [name]: pipAt(cfg.corner, cfg.size, turningOn ? e : 1 - e, live.w, live.h) }, bus));
+      const rest = turningOn ? pipRect(cfg.corner, cfg.size, live.w, live.h) : null;
+      await t.fxFrame({ [name]: rest }, bus);
+      await t.fxFrame({ [name]: rest }, this.otherBus(bus));
+      const real = await t.liveRead(bus);
+      const pip = [...this.state.live.pip];
+      pip[slot] = !!real[name];
+      this.setLive({ pip });
+      if (pip[slot] !== turningOn) this.notice(`PIP ${slot + 1}: OBS did not apply it`);
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`PIP ${slot + 1}: OBS did not apply it${why}`);
+      const real = await t.liveRead(bus).catch(() => null);
+      if (real) this.setLive({ pip: PIP_SCENES.map((n) => !!real[n]) });
+    } finally {
+      this.set({ fx: { running: false, layout: null } });
+    }
+    await this.maybeExitLive();
+  }
+
+  /** Assign a scene to PIP n. It stays there until changed; if the PIP is on air OBS swaps it live. */
+  async assignPip(slot: number, scene: string | null) {
+    if (!scene && this.state.live.pip[slot]) await this.togglePip(slot);
+    this.updateConfig({ pips: this.state.config.pips.map((p, i) => (i === slot ? { ...p, scene } : p)) });
+    await this.send(`PIP ${slot + 1} scene`, (t) => t.pipAssign(slot, scene));
+  }
+
+  assignPipFromPreview(slot: number) {
+    const scene = this.state.previewScene;
+    if (!scene || this.camForScene(scene) === null) {
+      this.notice("Put a mapped cam on PVW first");
+      return Promise.resolve();
+    }
+    return this.assignPip(slot, scene);
+  }
+
+  /** PIP corner / size. Glides to the new spot in OBS if the PIP is on air. */
+  async setPip(slot: number, patch: Partial<PipSlot>) {
+    const before = this.state.config.pips[slot];
+    if (!before) return;
+    const next = { ...before, ...patch };
+    this.updateConfig({ pips: this.state.config.pips.map((p, i) => (i === slot ? next : p)) });
+    const t = this.transport;
+    const live = this.live;
+    const name = PIP_SCENES[slot];
+    if (!t || !live || !name || !this.state.live.pip[slot] || this.state.fx.running) return;
+    const from = pipRect(before.corner, before.size, live.w, live.h);
+    const to = pipRect(next.corner, next.size, live.w, live.h);
+    const bus = this.progBus();
+    this.set({ fx: { running: true, layout: null } });
+    try {
+      await this.fxAnimate(400, (e) => t.fxFrame({ [name]: lerpRect(from, to, e) }, bus));
+      await t.fxFrame({ [name]: to }, bus);
+      await t.fxFrame({ [name]: to }, this.otherBus(bus));
+    } catch {
+      this.notice(`PIP ${slot + 1}: OBS did not apply the move`);
+    } finally {
+      this.set({ fx: { running: false, layout: null } });
+    }
+  }
+
+  /**
+   * Squeeze Merge: a real transition. The program picture eases down into its area while the advertisement
+   * slides into the space; tap again and the program eases back to full screen as the ad slides out.
+   */
+  async squeezeMerge() {
+    if (this.state.fx.running) return;
+    if (this.state.fx.layout) {
+      this.notice(`Close ${this.state.fx.layout.toUpperCase()} first`);
+      return;
+    }
+    const ad = this.state.config.ad;
+    const turningOn = !this.state.live.sqm;
+    if (turningOn && !ad.scene) {
+      this.notice("Squeeze Merge: pick an advertisement first (Live FX panel)");
+      return;
+    }
+    if (turningOn && ad.scene && this.fxCams().includes(ad.scene)) {
+      this.notice("The advertisement cannot be one of the cam scenes");
+      return;
+    }
+    if (turningOn && !this.live && !(await this.enterLive())) return;
+    const t = this.transport;
+    const live = this.live;
+    if (!t || !live || !ad.scene) return;
+    const bus = this.progBus();
+    const cam = live.mains[bus];
+    if (!cam) return;
+    const ms = Math.max(400, this.state.config.transitionDuration);
+    const { end, rest } = this.adTargets();
+    const from = turningOn ? rest : end;
+    const to = turningOn ? end : rest;
+    this.set({ fx: { running: true, layout: null }, transitioning: true, tBar: 0 });
+    try {
+      const overlays = this.overlaySources();
+      await t.liveEnsure(bus, overlays);
+      await t.liveEnsure(this.otherBus(bus), overlays);
+      await t.fxFrame({ [ad.scene]: from.ad }, bus);
+      await this.fxAnimate(
+        ms,
+        (e) => t.fxFrame({ [cam]: lerpRect(from.main, to.main, e), [ad.scene as string]: lerpRect(from.ad, to.ad, e) }, bus),
+        (raw) => this.set({ tBar: raw }),
+      );
+      this.setLive({ sqm: turningOn });
+      await t.fxFrame({ [cam]: this.mainRegion(), [ad.scene]: turningOn ? end.ad : null }, bus);
+      await this.liveSyncFree();
+      const real = await t.liveRead(bus);
+      const on = !!real[ad.scene];
+      this.setLive({ sqm: on });
+      if (on !== turningOn) this.notice("Squeeze Merge: OBS did not apply it");
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`Squeeze Merge: OBS did not apply it${why}`);
+      const real = await t.liveRead(bus).catch(() => null);
+      if (real) this.setLive({ sqm: !!real[ad.scene] });
+    } finally {
+      this.set({ fx: { running: false, layout: null }, tBar: 0, transitioning: false });
+    }
+    await this.maybeExitLive();
+  }
+
+  /** Advertisement content / layout / size. Content goes to OBS at once; layout changes glide when it is in. */
+  async setAd(patch: Partial<AdConfig>) {
+    const prev = this.state.config.ad;
+    const next = { ...prev, ...patch };
+    if (patch.scene && this.fxCams().includes(patch.scene)) {
+      this.notice("The advertisement cannot be one of the cam scenes");
+      return;
+    }
+    this.updateConfig({ ad: next });
+    const t = this.transport;
+    if (!t || this.state.status !== "connected") return;
+    if (patch.scene !== undefined && patch.scene !== prev.scene) {
+      if (patch.scene) {
+        try {
+          const all = await t.getSources();
+          if (!all.some((s) => s.name === patch.scene)) this.notice(`"${patch.scene}" was not found in OBS`);
+        } catch {
+          /* listing is only a check */
+        }
+      }
+      const live = this.live;
+      if (live && !this.state.fx.running) {
+        const wasIn = this.state.live.sqm;
+        try {
+          if (prev.scene) {
+            await t.fxFrame({ [prev.scene]: null }, LIVE_BUSES[0]);
+            await t.fxFrame({ [prev.scene]: null }, LIVE_BUSES[1]);
+          }
+          const overlays = this.overlaySources();
+          await t.liveEnsure(LIVE_BUSES[0], overlays);
+          await t.liveEnsure(LIVE_BUSES[1], overlays);
+          if (wasIn && patch.scene) {
+            const rect = this.adTargets(next).end.ad;
+            await t.fxFrame({ [patch.scene]: rect }, LIVE_BUSES[0]);
+            await t.fxFrame({ [patch.scene]: rect }, LIVE_BUSES[1]);
+          } else if (wasIn) {
+            this.setLive({ sqm: false });
+          }
+        } catch {
+          this.notice("Advertisement: OBS did not apply the change");
+        }
+      }
+      return;
+    }
+    const live = this.live;
+    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit)) {
+      const bus = this.progBus();
+      const cam = live.mains[bus];
+      const a = this.adTargets(prev).end;
+      const b = this.adTargets(next).end;
+      const adName = prev.scene;
+      if (!cam) return;
+      this.set({ fx: { running: true, layout: null } });
+      try {
+        await this.fxAnimate(500, (e) => t.fxFrame({ [cam]: lerpRect(a.main, b.main, e), [adName]: lerpRect(a.ad, b.ad, e) }, bus));
+        await t.fxFrame({ [cam]: b.main, [adName]: b.ad }, bus);
+        await this.liveSyncFree();
+      } catch {
+        this.notice("Advertisement: OBS did not apply the layout");
+      } finally {
+        this.set({ fx: { running: false, layout: null } });
+      }
+    }
+  }
+
+  async listSources() {
+    if (!this.transport || this.state.status !== "connected") return [];
+    return this.transport.getSources().catch(() => []);
   }
 
   setFx(patch: Partial<FxConfig>) {

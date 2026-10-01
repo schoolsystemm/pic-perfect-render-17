@@ -15,6 +15,8 @@ export type TransportEvent =
   | { type: "studioMode"; enabled: boolean }
   | { type: "transition"; active: boolean }
   | { type: "transitionSettings"; name?: string; duration?: number }
+  /** A live-bus item was switched on/off from outside the controller (OBS itself). */
+  | { type: "liveItem"; scene: string; source: string; on: boolean }
   | { type: "audio"; channels: AudioChannel[] }
   | { type: "mainAudio"; name: string | null }
   | {
@@ -90,9 +92,17 @@ export interface Transport {
    * Picture effects. Make sure the "MK FX" scene exists with a nested item per camera scene, and put
    * `top` above `bottom`. Returns the canvas size. Does NOT change what is on air.
    */
-  fxStage(cams: string[], bottom: string, top: string): Promise<{ width: number; height: number }>;
-  /** Place the nested camera scenes in "MK FX" (null = hidden). Keyed by scene name. */
-  fxFrame(frame: Record<string, FxRect | null>): Promise<void>;
+  fxStage(cams: string[], bottom: string, top: string, scene?: string): Promise<{ width: number; height: number }>;
+  /** Place nested scenes / sources in `scene` (default "MK FX"; null = hidden). Keyed by source name. Rejects if OBS refuses. */
+  fxFrame(frame: Record<string, FxRect | null>, scene?: string): Promise<void>;
+  /** Every scene and input in OBS, for the advertisement / PIP pickers. */
+  getSources(): Promise<{ name: string; kind: "scene" | "input" }[]>;
+  /** Persistent PIP assignment: put `source` into the "MK PIP n" scene (null = empty). Takes effect on air at once. */
+  pipAssign(slot: number, source: string | null): Promise<void>;
+  /** Make sure `scene` has an (initially hidden) item for each source and stack them on top, first = lowest. */
+  liveEnsure(scene: string, sources: string[]): Promise<void>;
+  /** The real on/off state of every item in `scene`, read from OBS (keyed by source name). */
+  liveRead(scene: string): Promise<Record<string, boolean>>;
   /** Switch program to `scene` as a hard cut, whatever transition is selected. Keeps the selected transition. */
   fxCutTo(scene: string): Promise<void>;
   /** Re-emit authoritative program / preview scenes. */

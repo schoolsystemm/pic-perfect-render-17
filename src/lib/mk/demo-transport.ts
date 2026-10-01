@@ -212,7 +212,23 @@ export class DemoTransport implements Transport {
     return { width: 1920, height: 1080 };
   }
 
-  async fxFrame() {}
+  async fxFrame(frame: Record<string, unknown>, scene?: string) {
+    const bus = scene ?? "";
+    const store = (this.liveItems[bus] ??= {});
+    for (const [name, r] of Object.entries(frame)) store[name] = !!r;
+  }
+
+  private liveItems: Record<string, Record<string, boolean>> = {};
+
+  async getSources() {
+    return [...DEMO_SCENES.map((name) => ({ name, kind: "scene" as const })), { name: "Ad Video", kind: "input" as const }, { name: "Ad Image", kind: "input" as const }];
+  }
+
+  async pipAssign() {}
+  async liveEnsure() {}
+  async liveRead(scene: string): Promise<Record<string, boolean>> {
+    return { ...(this.liveItems[scene] ?? {}) };
+  }
 
   async fxCutTo(scene: string) {
     this.program = scene;

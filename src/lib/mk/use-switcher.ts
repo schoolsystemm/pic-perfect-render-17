@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { engine } from "./engine";
-import { DEFAULT_CONFIG, DSK_COUNT, IDLE_GFX, IDLE_OUTPUT, type SwitcherState } from "./types";
+import { DEFAULT_CONFIG, DSK_COUNT, IDLE_GFX, IDLE_LIVE, IDLE_OUTPUT, type SwitcherState } from "./types";
 
 const serverSnapshot: SwitcherState = {
   status: "disconnected",
@@ -16,6 +16,7 @@ const serverSnapshot: SwitcherState = {
   tBar: 0,
   transitioning: false,
   fx: { running: false, layout: null },
+  live: IDLE_LIVE,
   scenes: [],
   transitions: [],
   studioMode: false,

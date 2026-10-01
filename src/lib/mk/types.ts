@@ -2,7 +2,7 @@
 // Kept free of UI and transport concerns so the same contracts can later back a
 // physical MK VISION PANEL hardware interface.
 
-import { DEFAULT_FX, type FxConfig, type FxLayoutKind } from "./fx";
+import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type FxConfig, type FxLayoutKind, type PipSlot } from "./fx";
 
 export const CAM_COUNT = 8;
 export const DSK_COUNT = 2;
@@ -203,7 +203,26 @@ export interface MkConfig {
   rundown: RundownItem[];
   /** Squeeze / PiP / Merge settings. */
   fx: FxConfig;
+  /** PIP 1 / PIP 2: persistent scene assignment + position + size. */
+  pips: PipSlot[];
+  /** Squeeze Merge advertisement: content, layout and size. */
+  ad: AdConfig;
 }
+
+/** What the live compositor is doing in OBS right now (confirmed from OBS, not assumed). */
+export interface LiveState {
+  /** OBS program is one of the MK LIVE buses. */
+  on: boolean;
+  /** PIP 1 / PIP 2 are showing in OBS. */
+  pip: boolean[];
+  /** Squeeze Merge is in (advertisement showing). */
+  sqm: boolean;
+  /** OBS scene names of the program / preview bus (for the monitors). */
+  progBus: string | null;
+  previewBus: string | null;
+}
+
+export const IDLE_LIVE: LiveState = { on: false, pip: [false, false], sqm: false, progBus: null, previewBus: null };
 
 export interface RundownItem {
   text: string;
@@ -270,6 +289,8 @@ export const DEFAULT_CONFIG: MkConfig = {
   hiddenAudio: [],
   rundown: [],
   fx: DEFAULT_FX,
+  pips: DEFAULT_PIPS,
+  ad: DEFAULT_AD,
 };
 
 export interface SwitcherState {
@@ -289,6 +310,7 @@ export interface SwitcherState {
   transitioning: boolean;
   /** Picture effects: `running` while one animates, `layout` while PiP / Merge is held on air. */
   fx: { running: boolean; layout: FxLayoutKind | null };
+  live: LiveState;
   scenes: string[];
   transitions: string[];
   studioMode: boolean;

@@ -2,7 +2,7 @@
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
-import { FX_SCENE, type FxRect } from "./fx";
+import { FX_SCENE, PIP_SCENES, type FxRect } from "./fx";
 import { GFX_SCENE } from "./graphics";
 import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
 
@@ -134,6 +134,16 @@ export class ObsTransport implements Transport {
       if (data.sceneName === GFX_SCENE) {
         for (const [name, id] of this.gfxIds) {
           if (id === data.sceneItemId) this.bus.emit({ type: "gfx", name, on: data.sceneItemEnabled });
+        }
+      }
+      // Items in the MK LIVE buses switched from OBS itself.
+      const tbl = this.tables.get(data.sceneName);
+      if (tbl) {
+        for (const [source, id] of tbl.ids) {
+          if (id === data.sceneItemId && tbl.on.get(source) !== data.sceneItemEnabled) {
+            tbl.on.set(source, data.sceneItemEnabled);
+            this.bus.emit({ type: "liveItem", scene: data.sceneName, source, on: data.sceneItemEnabled });
+          }
         }
       }
       // Only mirror the configured DSK items, not every source in every scene.
@@ -673,71 +683,173 @@ export class ObsTransport implements Transport {
     }
   }
 
-  // ------------------------------------------------------------ picture effects ("MK FX" scene)
+  // ------------------------------------------------------------ picture effects + live compositor
 
-  private fxIds = new Map<string, number>();
-  private fxOn = new Map<string, boolean>();
+  /** Per-scene cache: source name -> scene item id, and the on/off state we last set / saw. */
+  private tables = new Map<string, { ids: Map<string, number>; on: Map<string, boolean> }>();
+  private overlayOrder = new Map<string, string[]>();
 
-  async fxStage(cams: string[], bottom: string, top: string) {
-    const scenes = await this.getScenes();
-    if (!scenes.includes(FX_SCENE)) await this.obs.call("CreateScene", { sceneName: FX_SCENE });
-    const video = await this.obs.call("GetVideoSettings");
-    const list = await this.obs.call("GetSceneItemList", { sceneName: FX_SCENE });
-    this.fxIds.clear();
-    this.fxOn.clear();
+  private async loadTable(scene: string) {
+    const list = await this.obs.call("GetSceneItemList", { sceneName: scene });
+    const ids = new Map<string, number>();
+    const on = new Map<string, boolean>();
     for (const it of list.sceneItems) {
       const name = String(it["sourceName"]);
-      this.fxIds.set(name, Number(it["sceneItemId"]));
-      this.fxOn.set(name, it["sceneItemEnabled"] === true);
+      if (ids.has(name)) continue;
+      ids.set(name, Number(it["sceneItemId"]));
+      on.set(name, it["sceneItemEnabled"] === true);
     }
+    const table = { ids, on };
+    this.tables.set(scene, table);
+    return table;
+  }
+
+  private async ensureScene(scene: string) {
+    const scenes = await this.getScenes();
+    if (!scenes.includes(scene)) await this.obs.call("CreateScene", { sceneName: scene });
+  }
+
+  /** Keep the overlays (ad, PIPs) above the camera items. */
+  private async raise(scene: string) {
+    const order = this.overlayOrder.get(scene);
+    const table = this.tables.get(scene);
+    if (!order || !table) return;
+    const total = table.ids.size;
+    for (const name of order) {
+      const id = table.ids.get(name);
+      if (id === undefined) continue;
+      await this.obs.call("SetSceneItemIndex", { sceneName: scene, sceneItemId: id, sceneItemIndex: total - 1 });
+    }
+  }
+
+  async fxStage(cams: string[], bottom: string, top: string, scene: string = FX_SCENE) {
+    await this.ensureScene(scene);
+    const video = await this.obs.call("GetVideoSettings");
+    const table = await this.loadTable(scene);
     for (const cam of cams) {
-      if (this.fxIds.has(cam)) continue;
-      const res = await this.obs.call("CreateSceneItem", { sceneName: FX_SCENE, sourceName: cam, sceneItemEnabled: false });
-      this.fxIds.set(cam, res.sceneItemId);
-      this.fxOn.set(cam, false);
+      if (table.ids.has(cam)) continue;
+      const res = await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: cam, sceneItemEnabled: false });
+      table.ids.set(cam, res.sceneItemId);
+      table.on.set(cam, false);
     }
-    const b = this.fxIds.get(bottom);
-    const t = this.fxIds.get(top);
+    const b = table.ids.get(bottom);
+    const t = table.ids.get(top);
     if (b === undefined || t === undefined) throw new Error("MK FX: camera scene missing");
-    await this.obs.call("SetSceneItemIndex", { sceneName: FX_SCENE, sceneItemId: b, sceneItemIndex: 0 });
-    await this.obs.call("SetSceneItemIndex", { sceneName: FX_SCENE, sceneItemId: t, sceneItemIndex: Math.max(1, this.fxIds.size - 1) });
+    const camCount = new Set(cams.filter((c) => table.ids.has(c))).size;
+    await this.obs.call("SetSceneItemIndex", { sceneName: scene, sceneItemId: b, sceneItemIndex: 0 });
+    await this.obs.call("SetSceneItemIndex", { sceneName: scene, sceneItemId: t, sceneItemIndex: Math.max(1, camCount - 1) });
+    await this.raise(scene);
     return { width: video.baseWidth, height: video.baseHeight };
   }
 
-  async fxFrame(frame: Record<string, FxRect | null>) {
+  async liveEnsure(scene: string, sources: string[]) {
+    await this.ensureScene(scene);
+    const table = this.tables.get(scene) ?? (await this.loadTable(scene));
+    for (const name of sources) {
+      if (table.ids.has(name)) continue;
+      const res = await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: name, sceneItemEnabled: false });
+      table.ids.set(name, res.sceneItemId);
+      table.on.set(name, false);
+    }
+    this.overlayOrder.set(scene, sources);
+    await this.raise(scene);
+  }
+
+  async liveRead(scene: string) {
+    const table = await this.loadTable(scene);
+    return Object.fromEntries(table.on) as Record<string, boolean>;
+  }
+
+  async getSources() {
+    const out: { name: string; kind: "scene" | "input" }[] = [];
+    const { scenes } = await this.obs.call("GetSceneList");
+    for (const s of scenes) {
+      const name = String(s["sceneName"]);
+      if (!/^MK /.test(name)) out.push({ name, kind: "scene" });
+    }
+    const { inputs } = await this.obs.call("GetInputList");
+    for (const i of inputs) {
+      const name = String(i["inputName"]);
+      if (!/^MK /.test(name)) out.push({ name, kind: "input" });
+    }
+    return out;
+  }
+
+  async pipAssign(slot: number, source: string | null) {
+    const wrapper = PIP_SCENES[slot];
+    if (!wrapper) return;
+    await this.ensureScene(wrapper);
+    const list = await this.obs.call("GetSceneItemList", { sceneName: wrapper });
+    const items = list.sceneItems;
+    if (source && items.length === 1 && String(items[0]?.["sourceName"]) === source) return;
+    if (!source && items.length === 0) return;
+    if (source) {
+      // Add the new one first: if OBS refuses (e.g. it would nest a scene inside itself) the old PIP stays.
+      await this.obs.call("CreateSceneItem", { sceneName: wrapper, sourceName: source, sceneItemEnabled: true });
+    }
+    for (const it of items) await this.obs.call("RemoveSceneItem", { sceneName: wrapper, sceneItemId: Number(it["sceneItemId"]) });
+  }
+
+  async fxFrame(frame: Record<string, FxRect | null>, scene: string = FX_SCENE) {
+    const table = this.tables.get(scene);
+    if (!table) throw new Error(`MK: scene "${scene}" is not staged`);
     const requests: { requestType: string; requestData: Record<string, unknown> }[] = [];
-    for (const [scene, r] of Object.entries(frame)) {
-      const id = this.fxIds.get(scene);
+    for (const [name, r] of Object.entries(frame)) {
+      const id = table.ids.get(name);
       if (id === undefined) continue;
       if (r) {
+        const bounded = r.bw !== undefined && r.bh !== undefined;
         // Place it first, then show it, so an item never appears for a frame in its old spot.
         requests.push({
           requestType: "SetSceneItemTransform",
           requestData: {
-            sceneName: FX_SCENE,
+            sceneName: scene,
             sceneItemId: id,
-            sceneItemTransform: {
-              positionX: r.x,
-              positionY: r.y,
-              scaleX: Math.max(r.sx, 0.001),
-              scaleY: Math.max(r.sy, 0.001),
-              rotation: 0,
-              alignment: 5, // top-left
-              boundsType: "OBS_BOUNDS_NONE",
-              cropLeft: Math.round(r.cl),
-              cropRight: Math.round(r.cr),
-              cropTop: Math.round(r.ct),
-              cropBottom: Math.round(r.cb),
-            },
+            sceneItemTransform: bounded
+              ? {
+                  positionX: r.x + (r.bw as number) / 2,
+                  positionY: r.y + (r.bh as number) / 2,
+                  rotation: 0,
+                  alignment: 0,
+                  scaleX: 1,
+                  scaleY: 1,
+                  boundsType: r.fill ? "OBS_BOUNDS_SCALE_OUTER" : "OBS_BOUNDS_SCALE_INNER",
+                  boundsAlignment: 0,
+                  boundsWidth: Math.max(2, r.bw as number),
+                  boundsHeight: Math.max(2, r.bh as number),
+                  cropLeft: 0,
+                  cropRight: 0,
+                  cropTop: 0,
+                  cropBottom: 0,
+                }
+              : {
+                  positionX: r.x,
+                  positionY: r.y,
+                  scaleX: Math.max(r.sx, 0.001),
+                  scaleY: Math.max(r.sy, 0.001),
+                  rotation: 0,
+                  alignment: 5, // top-left
+                  boundsType: "OBS_BOUNDS_NONE",
+                  cropLeft: Math.round(r.cl),
+                  cropRight: Math.round(r.cr),
+                  cropTop: Math.round(r.ct),
+                  cropBottom: Math.round(r.cb),
+                },
           },
         });
       }
-      if (this.fxOn.get(scene) !== !!r) {
-        this.fxOn.set(scene, !!r);
-        requests.push({ requestType: "SetSceneItemEnabled", requestData: { sceneName: FX_SCENE, sceneItemId: id, sceneItemEnabled: !!r } });
+      if (table.on.get(name) !== !!r) {
+        table.on.set(name, !!r);
+        requests.push({ requestType: "SetSceneItemEnabled", requestData: { sceneName: scene, sceneItemId: id, sceneItemEnabled: !!r } });
       }
     }
-    if (requests.length) await this.obs.callBatch(requests as unknown as Parameters<typeof this.obs.callBatch>[0]);
+    if (!requests.length) return;
+    const results = (await this.obs.callBatch(requests as unknown as Parameters<typeof this.obs.callBatch>[0])) as unknown as Array<{
+      requestType: string;
+      requestStatus: { result: boolean; comment?: string };
+    }>;
+    const bad = results.find((x) => !x.requestStatus?.result);
+    if (bad) throw new Error(bad.requestStatus?.comment || `OBS rejected ${bad.requestType}`);
   }
 
   async fxCutTo(scene: string) {
