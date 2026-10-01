@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as GraphicsRouteImport } from './routes/graphics'
+import { Route as PrompterRouteImport } from './routes/prompter'
 import { Route as RundownRouteImport } from './routes/rundown'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SoundsRouteImport } from './routes/sounds'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const GraphicsRoute = GraphicsRouteImport.update({
   id: '/graphics',
   path: '/graphics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrompterRoute = PrompterRouteImport.update({
+  id: '/prompter',
+  path: '/prompter',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RundownRoute = RundownRouteImport.update({
@@ -44,6 +50,7 @@ const SoundsRoute = SoundsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/graphics': typeof GraphicsRoute
+  '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
   '/settings': typeof SettingsRoute
   '/sounds': typeof SoundsRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/graphics': typeof GraphicsRoute
+  '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
   '/settings': typeof SettingsRoute
   '/sounds': typeof SoundsRoute
@@ -59,21 +67,31 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/graphics': typeof GraphicsRoute
+  '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
   '/settings': typeof SettingsRoute
   '/sounds': typeof SoundsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/graphics' | '/rundown' | '/settings' | '/sounds'
+  fullPaths:
+    '/' | '/graphics' | '/prompter' | '/rundown' | '/settings' | '/sounds'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/graphics' | '/rundown' | '/settings' | '/sounds'
-  id: '__root__' | '/' | '/graphics' | '/rundown' | '/settings' | '/sounds'
+  to: '/' | '/graphics' | '/prompter' | '/rundown' | '/settings' | '/sounds'
+  id:
+    | '__root__'
+    | '/'
+    | '/graphics'
+    | '/prompter'
+    | '/rundown'
+    | '/settings'
+    | '/sounds'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   GraphicsRoute: typeof GraphicsRoute
+  PrompterRoute: typeof PrompterRoute
   RundownRoute: typeof RundownRoute
   SettingsRoute: typeof SettingsRoute
   SoundsRoute: typeof SoundsRoute
@@ -93,6 +111,13 @@ declare module '@tanstack/react-router' {
       path: '/graphics'
       fullPath: '/graphics'
       preLoaderRoute: typeof GraphicsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prompter': {
+      id: '/prompter'
+      path: '/prompter'
+      fullPath: '/prompter'
+      preLoaderRoute: typeof PrompterRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rundown': {
@@ -122,6 +147,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   GraphicsRoute: GraphicsRoute,
+  PrompterRoute: PrompterRoute,
   RundownRoute: RundownRoute,
   SettingsRoute: SettingsRoute,
   SoundsRoute: SoundsRoute,
