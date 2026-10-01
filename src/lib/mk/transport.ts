@@ -1,7 +1,7 @@
 // Transport contract: the only surface the control engine uses to talk to a
 // mixer backend. OBS WebSocket 5.x and Demo Mode both implement it, and a
 // future hardware bridge can too.
-import type { AudioChannel, ConnectionStatus, MonitorType } from "./types";
+import type { AudioChannel, ConnectionStatus, MonitorType, StreamStats } from "./types";
 
 export type TransportEvent =
   | { type: "status"; status: ConnectionStatus; message?: string }
@@ -26,6 +26,7 @@ export type TransportEvent =
     }
   | { type: "levels"; levels: Record<string, number> }
   | { type: "limiter"; gr: number | null }
+  | { type: "stats"; stats: StreamStats }
   | { type: "stream"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
   | { type: "record"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined };
 

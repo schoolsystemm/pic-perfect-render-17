@@ -56,6 +56,7 @@ function initialState(config: MkConfig): SwitcherState {
     notice: null,
     gr: null,
     masterMuted: false,
+    stats: null,
   };
 }
 
@@ -295,6 +296,9 @@ export class SwitcherEngine {
         break;
       case "limiter":
         this.set({ gr: event.gr });
+        break;
+      case "stats":
+        this.set({ stats: event.stats });
         break;
       case "mainAudio":
         this.set({ mainAudio: event.name });

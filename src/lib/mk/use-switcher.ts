@@ -27,6 +27,7 @@ const serverSnapshot: SwitcherState = {
   notice: null,
   gr: null,
   masterMuted: false,
+  stats: null,
 };
 
 /** Subscribe to the control engine. Boots it on first client render. */

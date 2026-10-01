@@ -262,6 +262,19 @@ export interface SwitcherState {
   gr: number | null;
   /** MUTE OUT is holding every final-mix input muted. */
   masterMuted: boolean;
+  /** OBS health telemetry, null until the first reading arrives. */
+  stats: StreamStats | null;
+}
+
+/** Live health numbers from OBS (or the demo), refreshed about once a second. */
+export interface StreamStats {
+  cpu: number; // % of the OBS PC's CPU used by OBS
+  fps: number; // active frames per second
+  bitrateKbps: number; // outgoing stream bitrate, 0 when not streaming
+  droppedFrames: number; // frames dropped by the network (stream output)
+  totalFrames: number; // frames the stream output has sent
+  skippedRender: number; // frames the renderer skipped (GPU / CPU overload)
+  congestion: number; // 0..1 output congestion reported by OBS
 }
 
 export interface AudioChannel {
