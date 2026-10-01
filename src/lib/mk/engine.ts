@@ -123,6 +123,28 @@ export class SwitcherEngine {
     return config;
   }
 
+  /**
+   * Send one command to OBS and tell the operator if it did not land. Returns true only when OBS
+   * accepted it. A missing / dead connection is reported instead of being silently ignored.
+   */
+  private async send(label: string, run: (t: Transport) => Promise<void>): Promise<boolean> {
+    const t = this.transport;
+    if (!t || this.state.status !== "connected") {
+      this.notice(`${label}: not sent — OBS is not connected`);
+      return false;
+    }
+    try {
+      await run(t);
+      return true;
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`${label}: OBS did not apply it${why}`);
+      // Put the controller back to what OBS really shows.
+      void t.resync().catch(() => {});
+      return false;
+    }
+  }
+
   private notice(message: string) {
     this.set({ notice: message });
     if (this.noticeTimer) clearTimeout(this.noticeTimer);
@@ -194,8 +216,11 @@ export class SwitcherEngine {
     this.unsubscribeTransport = transport.subscribe(this.onTransportEvent);
     try {
       await transport.connect();
-      await transport.setTransition(this.state.config.transition).catch(() => {});
-      await transport.setTransitionDuration(this.state.config.transitionDuration).catch(() => {});
+      // Demo has no OBS to read from; with real OBS the transport already mirrored its transition + time.
+      if (demoMode) {
+        await transport.setTransition(this.state.config.transition).catch(() => {});
+        await transport.setTransitionDuration(this.state.config.transitionDuration).catch(() => {});
+      }
       await this.syncDsks();
       await this.syncGfx();
     } catch {
@@ -284,6 +309,14 @@ export class SwitcherEngine {
           preview: this.camForScene(event.scene),
         });
         break;
+      case "transitionSettings": {
+        // OBS is the source of truth for the selected transition + its time.
+        const patch: Partial<MkConfig> = {};
+        if (event.name && event.name !== this.state.config.transition) patch.transition = event.name;
+        if (event.duration && event.duration !== this.state.config.transitionDuration) patch.transitionDuration = event.duration;
+        if (Object.keys(patch).length) this.updateConfig(patch);
+        break;
+      }
       case "transition":
         // The transport reports when a transition ends (auto take, OBS itself).
         if (this.fxBusy()) break;
@@ -344,8 +377,9 @@ export class SwitcherEngine {
     if (this.state.fx.running) return;
     const scene = this.sceneForCam(cam);
     this.set({ preview: cam, previewScene: scene });
-    if (!scene || !this.transport) return;
-    await this.transport.setPreviewScene(scene).catch(() => {});
+    if (!scene) return;
+    const ok = await this.send("Preview", (t) => t.setPreviewScene(scene));
+    if (!ok) return;
     // PiP / Merge held: the inset (right half) follows the preview bus live.
     if (this.state.fx.layout && this.fxHold && scene !== this.fxHold.a && scene !== this.fxHold.b) await this.fxRetarget(scene);
   }
@@ -356,8 +390,8 @@ export class SwitcherEngine {
     const scene = this.sceneForCam(cam);
     this.set({ program: cam, programScene: scene });
     this.applyAfv();
-    if (!scene || !this.transport) return;
-    await this.transport.setProgramScene(scene).catch(() => {});
+    if (!scene) return;
+    await this.send("Program", (t) => t.setProgramScene(scene));
   }
 
   private mergeOutput(
@@ -572,7 +606,7 @@ export class SwitcherEngine {
     this.tbarHeld = false;
     this.set({ tBar: 0, transitioning: false });
     this.swapLocal();
-    await this.transport?.performCut().catch(() => {});
+    await this.send("Cut", (t) => t.performCut());
     setTimeout(() => void this.transport?.resync().catch(() => {}), 200);
   }
 
@@ -599,7 +633,8 @@ export class SwitcherEngine {
         }
       }, 33);
     }
-    await this.transport?.performAutoTake().catch(() => {});
+    const sent = await this.send("Auto take", (t) => t.performAutoTake());
+    if (!sent) this.finishTransition();
     if (ms === 0) this.finishTransition();
   }
 
@@ -870,12 +905,12 @@ export class SwitcherEngine {
 
   async setTransition(name: string) {
     this.updateConfig({ transition: name });
-    await this.transport?.setTransition(name).catch(() => {});
+    await this.send("Transition", (t) => t.setTransition(name));
   }
 
   async setTransitionDuration(ms: number) {
     this.updateConfig({ transitionDuration: ms });
-    await this.transport?.setTransitionDuration(ms).catch(() => {});
+    await this.send("Transition time", (t) => t.setTransitionDuration(ms));
   }
 
   setDskTarget(index: number, patch: Partial<DskTarget>) {

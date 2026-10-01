@@ -14,6 +14,7 @@ export type TransportEvent =
   | { type: "transitions"; transitions: string[] }
   | { type: "studioMode"; enabled: boolean }
   | { type: "transition"; active: boolean }
+  | { type: "transitionSettings"; name?: string; duration?: number }
   | { type: "audio"; channels: AudioChannel[] }
   | { type: "mainAudio"; name: string | null }
   | {

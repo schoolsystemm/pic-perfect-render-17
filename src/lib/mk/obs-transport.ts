@@ -44,6 +44,11 @@ export class ObsTransport implements Transport {
   private obs = new OBSWebSocket();
   private bus = new EventBus();
   private manualClose = false;
+  /** Our own temporary "Cut" swaps must not be reported back as the operator changing transition. */
+  private quietUntil = 0;
+  private quiet() {
+    this.quietUntil = performance.now() + 600;
+  }
   private lastMeter = 0;
   private gfxIds = new Map<string, number>();
   private dskItems: (DskItem | null)[] = Array.from({ length: DSK_COUNT }, () => null);
@@ -67,6 +72,14 @@ export class ObsTransport implements Transport {
     );
     this.obs.on("SceneListChanged", () => {
       void this.getScenes().then((scenes) => this.bus.emit({ type: "scenes", scenes }));
+    });
+    this.obs.on("CurrentSceneTransitionChanged", ({ transitionName }) => {
+      if (performance.now() < this.quietUntil) return;
+      this.bus.emit({ type: "transitionSettings", name: transitionName });
+    });
+    this.obs.on("CurrentSceneTransitionDurationChanged", ({ transitionDuration }) => {
+      if (performance.now() < this.quietUntil) return;
+      this.bus.emit({ type: "transitionSettings", duration: transitionDuration });
     });
     this.obs.on("SceneTransitionStarted", () => this.bus.emit({ type: "transition", active: true }));
     this.obs.on("SceneTransitionEnded", () => this.bus.emit({ type: "transition", active: false }));
@@ -154,6 +167,12 @@ export class ObsTransport implements Transport {
       this.bus.emit({ type: "transitions", transitions });
       this.bus.emit({ type: "status", status: "connected" });
       await this.resync();
+      try {
+        const cur = await this.obs.call("GetCurrentSceneTransition");
+        this.bus.emit({ type: "transitionSettings", name: cur.transitionName, duration: cur.transitionDuration ?? undefined });
+      } catch {
+        /* ignore */
+      }
       await this.refreshAudio();
       await this.refreshOutputs();
     } catch (error) {
@@ -382,6 +401,7 @@ export class ObsTransport implements Transport {
 
   async performCut() {
     const previous = await this.currentTransition();
+    this.quiet();
     try {
       await this.obs.call("SetCurrentSceneTransition", { transitionName: "Cut" });
     } catch {
@@ -389,6 +409,7 @@ export class ObsTransport implements Transport {
     }
     await this.obs.call("TriggerStudioModeTransition");
     if (previous && previous !== "Cut") {
+      this.quiet();
       try {
         await this.obs.call("SetCurrentSceneTransition", { transitionName: previous });
       } catch {
@@ -415,11 +436,7 @@ export class ObsTransport implements Transport {
   }
 
   async setTransitionDuration(ms: number) {
-    try {
-      await this.obs.call("SetCurrentSceneTransitionDuration", { transitionDuration: ms });
-    } catch {
-      /* fixed-duration transitions reject duration changes */
-    }
+    await this.obs.call("SetCurrentSceneTransitionDuration", { transitionDuration: ms });
   }
 
   async setTBarPosition(position: number, release: boolean) {
@@ -725,6 +742,7 @@ export class ObsTransport implements Transport {
 
   async fxCutTo(scene: string) {
     const previous = await this.currentTransition();
+    this.quiet();
     try {
       await this.obs.call("SetCurrentSceneTransition", { transitionName: "Cut" });
     } catch {
@@ -732,6 +750,7 @@ export class ObsTransport implements Transport {
     }
     await this.obs.call("SetCurrentProgramScene", { sceneName: scene });
     if (previous && previous !== "Cut") {
+      this.quiet();
       try {
         await this.obs.call("SetCurrentSceneTransition", { transitionName: previous });
       } catch {
