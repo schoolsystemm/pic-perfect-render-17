@@ -13,6 +13,7 @@ import { ToolsHub } from "@/components/mk/tools-hub";
 import { StatusBar } from "@/components/mk/status-bar";
 import { TransitionPanel } from "@/components/mk/transition-panel";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
+import { FX_SCENE } from "@/lib/mk/fx";
 import { startPrompterHost } from "@/lib/mk/prompter";
 import { useShortcuts } from "@/lib/mk/use-shortcuts";
 import { cn } from "@/lib/utils";
@@ -92,6 +93,7 @@ function Switcher() {
                 program={state.program}
                 preview={state.preview}
                 programScene={state.programScene}
+                programFeed={state.fx.running || state.fx.layout ? FX_SCENE : null}
                 previewScene={state.previewScene}
                 tBar={state.tBar}
                 transitioning={state.transitioning}
@@ -196,6 +198,11 @@ function Switcher() {
             dsks={state.config.dsks}
             tBar={state.tBar}
             transitioning={state.transitioning}
+            fx={state.fx}
+            fxConfig={state.config.fx}
+            onSqueeze={() => void engine.squeeze()}
+            onLayout={(kind) => void engine.toggleLayout(kind)}
+            onFxOption={(patch) => engine.setFx(patch)}
             transitionName={state.config.transition}
             duration={state.config.transitionDuration}
             transitions={state.transitions}
