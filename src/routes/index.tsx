@@ -38,13 +38,13 @@ export const Route = createFileRoute("/")({
   component: Switcher,
 });
 
-type Panel = "multiview" | "audio" | "status" | "graphics" | "sounds";
-const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", audio: "Audio", status: "Status", graphics: "Graphics", sounds: "Sounds" };
+type Panel = "multiview" | "wall" | "audio" | "status" | "graphics" | "sounds";
+const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Status", graphics: "Graphics", sounds: "Sounds" };
 
 function Switcher() {
   const state = useSwitcher();
   useShortcuts(state.config.shortcuts);
-  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, audio: true, status: true, graphics: true, sounds: true });
+  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, wall: true, audio: true, status: true, graphics: true, sounds: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
   // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
   const mixInputs = state.audio.filter((c) => !/^MK /i.test(c.name));
@@ -52,7 +52,7 @@ function Switcher() {
   const stripInputs = mixInputs.filter((c) => !hiddenAudio.includes(c.name));
   const bottom = show.audio || show.status || show.graphics || show.sounds;
 
-  const menus = (["multiview", "audio", "status", "graphics", "sounds"] as Panel[]).map((p) => (
+  const menus = (["multiview", "wall", "audio", "status", "graphics", "sounds"] as Panel[]).map((p) => (
     <button
       key={p}
       type="button"
@@ -102,6 +102,11 @@ function Switcher() {
                 demo={state.demo}
                 graphics={state.config.graphics}
                 gfxActive={state.gfxActive}
+                wall={show.wall}
+                camScenes={state.config.camScenes}
+                getThumb={engine.getThumb}
+                onPreviewCam={(cam) => void engine.selectPreview(cam)}
+                onProgramCam={(cam) => void engine.selectProgram(cam)}
               />
             </div>
           )}
