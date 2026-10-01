@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { AudioMixer } from "@/components/mk/audio-mixer";
+import { AudioMixer, Master } from "@/components/mk/audio-mixer";
 import { ListenControl } from "@/components/mk/listen-control";
 import { GraphicsPanel } from "@/components/mk/graphics-panel";
 import { Multiview } from "@/components/mk/multiview";
@@ -9,6 +9,7 @@ import { OutputControls } from "@/components/mk/output-controls";
 import { ReconnectOverlay } from "@/components/mk/reconnect-overlay";
 import { SoundPad } from "@/components/mk/sound-pad";
 import { SourceBus } from "@/components/mk/source-bus";
+import { StatusHub } from "@/components/mk/status-hub";
 import { StatusBar } from "@/components/mk/status-bar";
 import { TransitionPanel } from "@/components/mk/transition-panel";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
@@ -37,17 +38,21 @@ export const Route = createFileRoute("/")({
   component: Switcher,
 });
 
-type Panel = "multiview" | "audio" | "graphics" | "sounds";
-const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", audio: "Audio", graphics: "Graphics", sounds: "Sounds" };
+type Panel = "multiview" | "audio" | "status" | "graphics" | "sounds";
+const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", audio: "Audio", status: "Status", graphics: "Graphics", sounds: "Sounds" };
 
 function Switcher() {
   const state = useSwitcher();
   useShortcuts(state.config.shortcuts);
-  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, audio: true, graphics: true, sounds: true });
+  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, audio: true, status: true, graphics: true, sounds: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
-  const bottom = show.audio || show.graphics || show.sounds;
+  // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
+  const mixInputs = state.audio.filter((c) => !/^MK /i.test(c.name));
+  const hiddenAudio = state.config.hiddenAudio;
+  const stripInputs = mixInputs.filter((c) => !hiddenAudio.includes(c.name));
+  const bottom = show.audio || show.status || show.graphics || show.sounds;
 
-  const menus = (["multiview", "audio", "graphics", "sounds"] as Panel[]).map((p) => (
+  const menus = (["multiview", "audio", "status", "graphics", "sounds"] as Panel[]).map((p) => (
     <button
       key={p}
       type="button"
@@ -120,9 +125,13 @@ function Switcher() {
               )}
             >
               {show.audio && (
-                <div className="h-56 min-w-0 fit:h-auto fit:flex-1">
+                <div className="h-56 min-w-0 fit:h-auto fit:max-w-[52%] fit:flex-[0_1_auto]">
                   <AudioMixer
-                    channels={state.audio}
+                    hidden={hiddenAudio.filter((n) => mixInputs.some((c) => c.name === n))}
+                    onHide={(name) => engine.hideAudio(name)}
+                    onShow={(name) => engine.showAudio(name)}
+                    onShowAll={() => engine.showAllAudio()}
+                    channels={stripInputs}
                     levels={state.levels}
                     afv={state.config.audioFollowVideo}
                     limiter={state.config.limiter}
@@ -138,6 +147,21 @@ function Switcher() {
                     onAfv={(on) => engine.setAudioFollowVideo(on)}
                     onLimiter={(patch) => engine.setLimiter(patch)}
                     onMuteOut={() => void engine.toggleMasterMute()}
+                  />
+                </div>
+              )}
+              {show.status && (
+                <div className="h-40 min-w-0 fit:h-auto fit:min-w-[16rem] fit:flex-1">
+                  <StatusHub
+                    programScene={state.programScene}
+                    previewScene={state.previewScene}
+                    dskActive={state.dskActive}
+                    gfxActive={state.gfxActive}
+                    audio={state.audio}
+                    stream={state.stream}
+                    record={state.record}
+                    stats={state.stats}
+                    connected={state.status === "connected"}
                   />
                 </div>
               )}
@@ -179,6 +203,28 @@ function Switcher() {
             onTBarChange={(value) => engine.setTBar(value)}
             onTBarRelease={(value) => engine.setTBar(value, true)}
           />
+          {show.audio && (
+            <div className={cn("h-56 shrink-0 fit:h-[clamp(190px,29vh,270px)]", !show.multiview && "fit:h-[clamp(190px,42vh,380px)]")}>
+              <Master
+                channels={mixInputs}
+                levels={state.levels}
+                afv={state.config.audioFollowVideo}
+                limiter={state.config.limiter}
+                gr={state.gr}
+                masterMuted={state.masterMuted}
+                camOf={(name) => engine.audioCam(name)}
+                onVolume={(name, db) => void engine.setAudioVolume(name, db)}
+                onMute={(name) => void engine.toggleAudioMute(name)}
+                onMonitor={(name) => void engine.cycleAudioMonitor(name)}
+                onStream={(name) => void engine.toggleAudioStream(name)}
+                onPre={(name) => void engine.toggleAudioPre(name)}
+                onHearFinal={(on) => void engine.hearFinalInPre(on)}
+                onAfv={(on) => engine.setAudioFollowVideo(on)}
+                onLimiter={(patch) => engine.setLimiter(patch)}
+                onMuteOut={() => void engine.toggleMasterMute()}
+              />
+            </div>
+          )}
         </div>
       </main>
       {state.notice && (
