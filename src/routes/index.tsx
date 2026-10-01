@@ -15,6 +15,7 @@ import { TransitionPanel } from "@/components/mk/transition-panel";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { FX_SCENE } from "@/lib/mk/fx";
 import { LivePanel } from "@/components/mk/live-panel";
+import { comms, tallyOf } from "@/lib/mk/intercom";
 import { startPrompterHost } from "@/lib/mk/prompter";
 import { useShortcuts } from "@/lib/mk/use-shortcuts";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,11 @@ function Switcher() {
   useShortcuts(state.config.shortcuts);
   // Teleprompter host: keeps the /prompter output window in sync even when the Tools panel is hidden.
   useEffect(() => startPrompterHost(), []);
+  // Camera tally for the operators' phones (red = on air, green = next). Runs even when the Tools panel is hidden.
+  useEffect(() => {
+    const t = tallyOf(state);
+    comms.setTally(t.pgm, t.pvw, state.config.camScenes);
+  }, [state]);
   const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, wall: true, audio: true, status: true, graphics: true, sounds: true, live: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
   // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
