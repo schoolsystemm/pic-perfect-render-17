@@ -170,6 +170,8 @@ export interface MkConfig {
   listenVolume: number;
   /** Master limiter: an OBS Limiter filter on every input that goes to the final mix. */
   limiter: LimiterConfig;
+  /** Audio inputs the operator hid from the mixer (they stay in OBS and on the mix). */
+  hiddenAudio: string[];
 }
 
 export interface LimiterConfig {
@@ -228,6 +230,7 @@ export const DEFAULT_CONFIG: MkConfig = {
   listenUrl: "",
   listenVolume: 1,
   limiter: DEFAULT_LIMITER,
+  hiddenAudio: [],
 };
 
 export interface SwitcherState {

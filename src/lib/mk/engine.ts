@@ -464,6 +464,20 @@ export class SwitcherEngine {
   }
 
   /** Cam index an audio input belongs to: matches a mapped scene name or "CAM n". */
+  /** Take a strip off the mixer screen. The input keeps running in OBS and stays on the mix. */
+  hideAudio(name: string) {
+    if (this.state.config.hiddenAudio.includes(name)) return;
+    this.updateConfig({ hiddenAudio: [...this.state.config.hiddenAudio, name] });
+  }
+
+  showAudio(name: string) {
+    this.updateConfig({ hiddenAudio: this.state.config.hiddenAudio.filter((n) => n !== name) });
+  }
+
+  showAllAudio() {
+    this.updateConfig({ hiddenAudio: [] });
+  }
+
   audioCam(name: string): CamIndex | null {
     if (name === this.state.mainAudio) return null;
     const lower = name.toLowerCase();

@@ -97,6 +97,7 @@ export function loadConfig(): MkConfig {
       graphicsScene: typeof parsed.graphicsScene === "string" ? parsed.graphicsScene : "",
       listenUrl: typeof parsed.listenUrl === "string" ? parsed.listenUrl : "",
       listenVolume: typeof parsed.listenVolume === "number" ? parsed.listenVolume : 1,
+      hiddenAudio: Array.isArray(parsed.hiddenAudio) ? parsed.hiddenAudio.filter((n): n is string => typeof n === "string") : [],
       limiter: {
         on: typeof parsed.limiter?.on === "boolean" ? parsed.limiter.on : DEFAULT_LIMITER.on,
         threshold:
