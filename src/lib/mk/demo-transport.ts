@@ -52,6 +52,7 @@ export class DemoTransport implements Transport {
     { name: "Music Bed", db: -18, muted: true, monitor: "none", stream: true, pre: true },
   ];
   private record = false;
+  private limiter = { on: false, threshold: -6 };
 
   subscribe = this.bus.subscribe;
 
@@ -69,15 +70,24 @@ export class DemoTransport implements Transport {
     this.bus.emit({ type: "record", active: false });
     this.meterTimer = setInterval(() => {
       const levels: Record<string, number> = {};
+      let gr = 0;
       for (const c of this.channels) {
         if (c.muted) {
           levels[c.name] = -100;
           continue;
         }
-        const base = -20 + c.db * 0.6;
-        levels[c.name] = Math.min(2, base + (Math.random() - 0.3) * 16);
+        // Raw program-level peaks, hot enough to hit the limiter now and then.
+        const base = -18 + c.db * 0.8;
+        let peak = Math.min(3, base + (Math.random() - 0.3) * 16);
+        if (this.limiter.on && c.stream && peak > this.limiter.threshold) {
+          // Brick-wall: the ceiling holds, a hair of overshoot like a real look-ahead limiter.
+          gr = Math.max(gr, peak - this.limiter.threshold);
+          peak = this.limiter.threshold + Math.random() * 0.15;
+        }
+        levels[c.name] = peak;
       }
       this.bus.emit({ type: "levels", levels });
+      this.bus.emit({ type: "limiter", gr: this.limiter.on ? gr : 0 });
     }, 80);
   }
 
@@ -108,6 +118,10 @@ export class DemoTransport implements Transport {
     const c = this.channels.find((x) => x.name === name);
     if (c) c.pre = enabled;
     this.bus.emit({ type: "audioChannel", name, pre: enabled });
+  }
+
+  async setLimiter(_inputs: string[], on: boolean, threshold: number) {
+    this.limiter = { on, threshold };
   }
 
   async setStreaming(on: boolean) {

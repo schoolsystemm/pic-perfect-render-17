@@ -152,9 +152,8 @@ class Listener {
 
 export const listener = new Listener();
 
+const SERVER_LISTEN: ListenState = { status: "off" as ListenStatus, message: "" };
+
 export function useListen(): ListenState {
-  return useSyncExternalStore(listener.subscribe, listener.getSnapshot, () => ({
-    status: "off" as ListenStatus,
-    message: "",
-  }));
+  return useSyncExternalStore(listener.subscribe, listener.getSnapshot, () => SERVER_LISTEN);
 }

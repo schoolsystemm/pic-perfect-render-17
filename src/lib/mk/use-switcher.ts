@@ -25,6 +25,8 @@ const serverSnapshot: SwitcherState = {
   stream: IDLE_OUTPUT,
   record: IDLE_OUTPUT,
   notice: null,
+  gr: null,
+  masterMuted: false,
 };
 
 /** Subscribe to the control engine. Boots it on first client render. */

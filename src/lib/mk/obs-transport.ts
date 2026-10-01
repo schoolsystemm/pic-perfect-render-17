@@ -23,6 +23,8 @@ function monitorFromObs(value: string | undefined): MonitorType {
   return "none";
 }
 
+const LIMITER_FILTER = "MK Limiter";
+
 const MAIN_KINDS = [
   "wasapi_output_capture",
   "pulse_output_capture",
@@ -283,6 +285,40 @@ export class ObsTransport implements Transport {
       inputName: name,
       inputAudioTracks: { "2": enabled },
     });
+  }
+
+  /** The limiter lives on each input as an OBS "Limiter" filter named MK Limiter. */
+  async setLimiter(inputs: string[], on: boolean, threshold: number) {
+    const settings = { threshold, release_time: 60 };
+    for (const sourceName of inputs) {
+      try {
+        const { filters } = await this.obs.call("GetSourceFilterList", { sourceName });
+        const has = (filters as Array<Record<string, unknown>>).some((f) => f["filterName"] === LIMITER_FILTER);
+        if (!has) {
+          if (!on) continue;
+          await this.obs.call("CreateSourceFilter", {
+            sourceName,
+            filterName: LIMITER_FILTER,
+            filterKind: "limiter_filter",
+            filterSettings: settings,
+          });
+        } else {
+          await this.obs.call("SetSourceFilterSettings", {
+            sourceName,
+            filterName: LIMITER_FILTER,
+            filterSettings: settings,
+            overlay: true,
+          });
+          await this.obs.call("SetSourceFilterEnabled", {
+            sourceName,
+            filterName: LIMITER_FILTER,
+            filterEnabled: on,
+          });
+        }
+      } catch {
+        /* input without filter support (e.g. media-less) — skip */
+      }
+    }
   }
 
   async setStreaming(on: boolean) {

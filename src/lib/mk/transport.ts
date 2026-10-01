@@ -25,6 +25,7 @@ export type TransportEvent =
       pre?: boolean;
     }
   | { type: "levels"; levels: Record<string, number> }
+  | { type: "limiter"; gr: number | null }
   | { type: "stream"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
   | { type: "record"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined };
 
@@ -52,6 +53,11 @@ export interface Transport {
   setInputStream(name: string, enabled: boolean): Promise<void>;
   /** Send an input to the pre-listen mix (audio track 2). */
   setInputPre(name: string, enabled: boolean): Promise<void>;
+  /**
+   * Master limiter: put / take an audio limiter on every named input (the ones on the
+   * final mix). `threshold` is the ceiling in dBFS.
+   */
+  setLimiter(inputs: string[], on: boolean, threshold: number): Promise<void>;
   setStreaming(on: boolean): Promise<void>;
   setRecording(on: boolean): Promise<void>;
   setRecordPaused(paused: boolean): Promise<void>;

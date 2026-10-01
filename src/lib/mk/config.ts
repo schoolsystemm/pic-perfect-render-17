@@ -4,6 +4,7 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_DSKS,
   DEFAULT_GRAPHICS,
+  DEFAULT_LIMITER,
   DEFAULT_SHORTCUTS,
   DSK_COUNT,
   type DskTarget,
@@ -44,6 +45,7 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
         image: typeof r.logo === "string" ? r.logo : null,
         pos: r.logoPos ?? D.logo.pos,
         size: r.logoSize ?? D.logo.size,
+        opacity: D.logo.opacity,
       },
       lower: {
         ...D.lower,
@@ -95,6 +97,11 @@ export function loadConfig(): MkConfig {
       graphicsScene: typeof parsed.graphicsScene === "string" ? parsed.graphicsScene : "",
       listenUrl: typeof parsed.listenUrl === "string" ? parsed.listenUrl : "",
       listenVolume: typeof parsed.listenVolume === "number" ? parsed.listenVolume : 1,
+      limiter: {
+        on: typeof parsed.limiter?.on === "boolean" ? parsed.limiter.on : DEFAULT_LIMITER.on,
+        threshold:
+          typeof parsed.limiter?.threshold === "number" ? parsed.limiter.threshold : DEFAULT_LIMITER.threshold,
+      },
     };
   } catch {
     return DEFAULT_CONFIG;

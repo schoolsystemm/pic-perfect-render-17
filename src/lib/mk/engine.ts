@@ -4,6 +4,7 @@
 // exact same functions later.
 import { loadConfig, saveConfig } from "./config";
 import { DemoTransport } from "./demo-transport";
+import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import type { Transport, TransportEvent } from "./transport";
 import {
@@ -18,6 +19,7 @@ import {
   type DskTarget,
   type GfxId,
   type GraphicsConfig,
+  type LimiterConfig,
   type MkConfig,
   type MonitorType,
   type OutputState,
@@ -52,6 +54,8 @@ function initialState(config: MkConfig): SwitcherState {
     stream: IDLE_OUTPUT,
     record: IDLE_OUTPUT,
     notice: null,
+    gr: null,
+    masterMuted: false,
   };
 }
 
@@ -287,6 +291,10 @@ export class SwitcherEngine {
       }
       case "audio":
         this.set({ audio: event.channels });
+        if (this.state.config.limiter.on) void this.applyLimiter();
+        break;
+      case "limiter":
+        this.set({ gr: event.gr });
         break;
       case "mainAudio":
         this.set({ mainAudio: event.name });
@@ -377,6 +385,56 @@ export class SwitcherEngine {
     if (!channel) return;
     this.onTransportEvent({ type: "audioChannel", name, stream: !channel.stream });
     await this.transport?.setInputStream(name, !channel.stream).catch(() => {});
+    const { limiter } = this.state.config;
+    if (limiter.on) await this.transport?.setLimiter([name], !channel.stream, limiter.threshold).catch(() => {});
+  }
+
+  // ---------------------------------------------------------------- limiter
+
+  private limiterTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Push the limiter to every input that is on the final mix (and off the rest). */
+  private async applyLimiter() {
+    if (!this.transport) return;
+    const { on, threshold } = this.state.config.limiter;
+    const onMain = this.state.audio.filter((c) => c.stream).map((c) => c.name);
+    const rest = this.state.audio.filter((c) => !c.stream).map((c) => c.name);
+    await this.transport.setLimiter(onMain, on, threshold).catch(() => {});
+    if (rest.length) await this.transport.setLimiter(rest, false, threshold).catch(() => {});
+  }
+
+  /** Master limiter on/off and ceiling. Ceiling changes are debounced while dragging. */
+  setLimiter(patch: Partial<LimiterConfig>) {
+    const prev = this.state.config.limiter;
+    const limiter = { ...prev, ...patch };
+    this.updateConfig({ limiter });
+    if (!limiter.on) this.set({ gr: 0 });
+    if (this.limiterTimer) clearTimeout(this.limiterTimer);
+    this.limiterTimer = setTimeout(() => void this.applyLimiter(), prev.on === limiter.on ? 250 : 0);
+  }
+
+  /** MUTE OUT: silence the whole final mix, and bring back exactly what was live. */
+  private masterHeld: string[] = [];
+
+  async toggleMasterMute() {
+    if (this.state.masterMuted) {
+      const names = this.masterHeld;
+      this.masterHeld = [];
+      this.set({ masterMuted: false });
+      for (const name of names) {
+        this.onTransportEvent({ type: "audioChannel", name, muted: false });
+        await this.transport?.setInputMute(name, false).catch(() => {});
+      }
+      return;
+    }
+    const live = this.state.audio.filter((c) => c.stream && !c.muted).map((c) => c.name);
+    if (!live.length) return;
+    this.masterHeld = live;
+    this.set({ masterMuted: true });
+    for (const name of live) {
+      this.onTransportEvent({ type: "audioChannel", name, muted: true });
+      await this.transport?.setInputMute(name, true).catch(() => {});
+    }
   }
 
   /** Send / remove an input to the PRE-LISTEN mix (audio track 2, played by Listen). */
@@ -664,6 +722,12 @@ export class SwitcherEngine {
       this.set({ gfxActive: { ...this.state.gfxActive, [id]: !next } });
       this.notice("Graphics not set up in OBS yet — Settings → Graphics → Set up");
     }
+  }
+
+  /** Load a saved design from the library into its layer (it stays off air until you take it). */
+  loadSavedGraphic(item: SavedGraphic) {
+    this.setGraphic(item.layer, item.data as never);
+    this.notice(`Loaded "${item.name}"`);
   }
 
   applyLowerPreset(index: number) {
