@@ -1,4 +1,5 @@
-import { Headphones, Volume2, VolumeX } from "lucide-react";
+import { Eye, EyeOff, Headphones, Volume2, VolumeX } from "lucide-react";
+import { useState } from "react";
 
 import { Fader } from "@/components/mk/fader";
 import { GrMeter, Meter, MeterScale } from "@/components/mk/meter";
@@ -70,6 +71,15 @@ function FaderScale() {
   );
 }
 
+/** Extra props only the strip view needs (the Master does not use them). */
+export interface MixerViewProps {
+  /** Names of inputs hidden from the strips. */
+  hidden: string[];
+  onHide: (name: string) => void;
+  onShow: (name: string) => void;
+  onShowAll: () => void;
+}
+
 /** Every audio input is the same kind of strip — mic, desktop, browser, sounds. */
 function Strip({
   channel: c,
@@ -80,13 +90,24 @@ function Strip({
   channel: AudioChannel;
   level: number;
   cam: number | null;
-  props: AudioMixerProps;
+  props: AudioMixerProps & MixerViewProps;
 }) {
   return (
     <div className="flex w-[4.6rem] shrink-0 flex-col items-center gap-1 rounded-[4px] border border-white/5 bg-black/20 px-1 py-1">
-      <span className="w-full truncate text-center text-[10px] leading-none font-bold text-foreground" title={c.name}>
-        {c.name}
-      </span>
+      <div className="flex w-full items-center gap-0.5">
+        <span className="min-w-0 flex-1 truncate text-center text-[10px] leading-none font-bold text-foreground" title={c.name}>
+          {c.name}
+        </span>
+        <button
+          type="button"
+          onClick={() => props.onHide(c.name)}
+          aria-label={`Hide ${c.name} from the mixer`}
+          title="Hide this strip (it keeps running in OBS)"
+          className="shrink-0 text-engrave hover:text-foreground"
+        >
+          <EyeOff className="h-3 w-3" />
+        </button>
+      </div>
       <span className="font-mono text-[8px] leading-none text-engrave">
         {fmtDb(c.db)}
         {cam !== null ? ` C${cam + 1}` : ""}
@@ -201,8 +222,9 @@ export function Master(props: AudioMixerProps & { className?: string }) {
   );
 }
 
-export function AudioMixer(props: AudioMixerProps) {
-  const { channels, levels, afv, camOf, onAfv } = props;
+export function AudioMixer(props: AudioMixerProps & MixerViewProps) {
+  const { channels, levels, afv, camOf, onAfv, hidden } = props;
+  const [showHidden, setShowHidden] = useState(false);
   return (
     <section className="mk-panel flex h-full min-h-0 min-w-0 flex-col rounded-md p-1.5">
       <header className="mb-1 flex items-center gap-2">
@@ -216,9 +238,33 @@ export function AudioMixer(props: AudioMixerProps) {
         >
           AFV {afv ? "ON" : "OFF"}
         </button>
+        {hidden.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowHidden((v) => !v)}
+            aria-pressed={showHidden}
+            className={cn("mk-button flex h-[18px] items-center gap-1 rounded-[3px] px-2 text-[9px]", showHidden && "mk-lit-preview")}
+            title="Strips you hid — click to bring them back"
+          >
+            <Eye className="h-3 w-3" />
+            {hidden.length} HIDDEN
+          </button>
+        )}
       </header>
+      {showHidden && hidden.length > 0 && (
+        <div className="mb-1 flex flex-wrap items-center gap-1 rounded-[3px] border border-white/5 bg-black/25 p-1">
+          {hidden.map((n) => (
+            <button key={n} type="button" onClick={() => props.onShow(n)} className="mk-button h-[18px] max-w-[9rem] truncate rounded-[3px] px-1.5 text-[9px]" title={`Show ${n}`}>
+              + {n}
+            </button>
+          ))}
+          <button type="button" onClick={props.onShowAll} className="mk-button h-[18px] rounded-[3px] px-1.5 text-[9px] text-amber">
+            SHOW ALL
+          </button>
+        </div>
+      )}
       {channels.length === 0 ? (
-        <p className="mk-label py-4 text-center text-[10px]">No audio inputs</p>
+        <p className="mk-label py-4 text-center text-[10px]">{hidden.length ? "All strips hidden" : "No audio inputs"}</p>
       ) : (
         <div className="flex min-h-0 min-w-0 flex-1 items-stretch gap-1 overflow-x-auto overflow-y-hidden">
           {channels.map((c) => (
