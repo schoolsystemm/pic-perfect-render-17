@@ -52,10 +52,6 @@ export class DemoTransport implements Transport {
     { name: "Music Bed", db: -18, muted: true, monitor: "none", stream: true, pre: true },
   ];
   private record = false;
-  private statTick = 0;
-  private kbps = 4500;
-  private dropped = 0;
-  private frames = 0;
   private limiter = { on: false, threshold: -6 };
 
   subscribe = this.bus.subscribe;
@@ -92,27 +88,7 @@ export class DemoTransport implements Transport {
       }
       this.bus.emit({ type: "levels", levels });
       this.bus.emit({ type: "limiter", gr: this.limiter.on ? gr : 0 });
-      if (++this.statTick % 12 === 0) this.emitStats();
     }, 80);
-  }
-
-  /** Believable health numbers: a steady 4.5 Mbps stream with the odd wobble. */
-  private emitStats() {
-    this.kbps = Math.max(3200, Math.min(5200, this.kbps + (Math.random() - 0.5) * 420));
-    this.frames += 30;
-    if (Math.random() < 0.04) this.dropped += 1 + Math.floor(Math.random() * 3);
-    this.bus.emit({
-      type: "stats",
-      stats: {
-        cpu: 18 + Math.random() * 9,
-        fps: 30,
-        bitrateKbps: Math.round(this.kbps),
-        droppedFrames: this.dropped,
-        totalFrames: this.frames,
-        skippedRender: 0,
-        congestion: Math.random() * 0.08,
-      },
-    });
   }
 
   async setInputVolume(name: string, db: number) {

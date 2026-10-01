@@ -23,6 +23,7 @@ import {
   type MkConfig,
   type MonitorType,
   type OutputState,
+  type RundownItem,
   type ScrollPreset,
   type SwitcherState,
 } from "./types";
@@ -57,7 +58,6 @@ function initialState(config: MkConfig): SwitcherState {
     notice: null,
     gr: null,
     masterMuted: false,
-    stats: null,
   };
 }
 
@@ -298,9 +298,6 @@ export class SwitcherEngine {
       case "limiter":
         this.set({ gr: event.gr });
         break;
-      case "stats":
-        this.set({ stats: event.stats });
-        break;
       case "mainAudio":
         this.set({ mainAudio: event.name });
         break;
@@ -465,6 +462,11 @@ export class SwitcherEngine {
   }
 
   /** Cam index an audio input belongs to: matches a mapped scene name or "CAM n". */
+  /** Replace the run-of-show checklist (add, tick, remove, clear). */
+  setRundown(rundown: RundownItem[]) {
+    this.updateConfig({ rundown: rundown.slice(0, 40) });
+  }
+
   /** Take a strip off the mixer screen. The input keeps running in OBS and stays on the mix. */
   hideAudio(name: string) {
     if (this.state.config.hiddenAudio.includes(name)) return;

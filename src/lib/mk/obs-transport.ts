@@ -44,14 +44,11 @@ export class ObsTransport implements Transport {
   private bus = new EventBus();
   private manualClose = false;
   private lastMeter = 0;
-  private statsTimer: ReturnType<typeof setInterval> | null = null;
-  private lastBytes: { bytes: number; at: number } | null = null;
   private gfxIds = new Map<string, number>();
   private dskItems: (DskItem | null)[] = Array.from({ length: DSK_COUNT }, () => null);
 
   constructor(private options: ObsTransportOptions) {
     this.obs.on("ConnectionClosed", () => {
-      this.stopStats();
       this.bus.emit({
         type: "status",
         status: this.manualClose ? "disconnected" : "error",
@@ -158,7 +155,6 @@ export class ObsTransport implements Transport {
       await this.resync();
       await this.refreshAudio();
       await this.refreshOutputs();
-      this.startStats();
     } catch (error) {
       this.bus.emit({
         type: "status",
@@ -240,45 +236,6 @@ export class ObsTransport implements Transport {
     } catch {
       /* ignore */
     }
-  }
-
-  /** Poll OBS health once a second: CPU, fps, dropped frames and the live bitrate. */
-  private startStats() {
-    this.stopStats();
-    const poll = async () => {
-      try {
-        const [s, st] = await Promise.all([this.obs.call("GetStats"), this.obs.call("GetStreamStatus")]);
-        const now = performance.now();
-        let bitrateKbps = 0;
-        if (st.outputActive && this.lastBytes && st.outputBytes >= this.lastBytes.bytes) {
-          const secs = (now - this.lastBytes.at) / 1000;
-          if (secs > 0) bitrateKbps = Math.round(((st.outputBytes - this.lastBytes.bytes) * 8) / 1000 / secs);
-        }
-        this.lastBytes = st.outputActive ? { bytes: st.outputBytes, at: now } : null;
-        this.bus.emit({
-          type: "stats",
-          stats: {
-            cpu: s.cpuUsage,
-            fps: s.activeFps,
-            bitrateKbps,
-            droppedFrames: st.outputSkippedFrames,
-            totalFrames: st.outputTotalFrames,
-            skippedRender: s.renderSkippedFrames,
-            congestion: st.outputCongestion ?? 0,
-          },
-        });
-      } catch {
-        /* a missed reading is fine — the next one will land */
-      }
-    };
-    void poll();
-    this.statsTimer = setInterval(() => void poll(), 1000);
-  }
-
-  private stopStats() {
-    if (this.statsTimer) clearInterval(this.statsTimer);
-    this.statsTimer = null;
-    this.lastBytes = null;
   }
 
   private async refreshOutputs() {
@@ -378,7 +335,6 @@ export class ObsTransport implements Transport {
 
   async disconnect() {
     this.manualClose = true;
-    this.stopStats();
     try {
       await this.obs.disconnect();
     } catch {

@@ -122,6 +122,12 @@ export function loadConfig(): MkConfig {
       graphicsScene: typeof parsed.graphicsScene === "string" ? parsed.graphicsScene : "",
       listenUrl: typeof parsed.listenUrl === "string" ? parsed.listenUrl : "",
       listenVolume: typeof parsed.listenVolume === "number" ? parsed.listenVolume : 1,
+      rundown: Array.isArray(parsed.rundown)
+        ? parsed.rundown
+            .filter((i) => !!i && typeof i.text === "string" && i.text.trim() !== "")
+            .slice(0, 40)
+            .map((i) => ({ text: i.text.slice(0, 120), done: i.done === true }))
+        : [],
       hiddenAudio: Array.isArray(parsed.hiddenAudio) ? parsed.hiddenAudio.filter((n): n is string => typeof n === "string") : [],
       limiter: {
         on: typeof parsed.limiter?.on === "boolean" ? parsed.limiter.on : DEFAULT_LIMITER.on,
