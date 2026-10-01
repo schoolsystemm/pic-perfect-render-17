@@ -7,7 +7,7 @@ interface TBarProps {
 }
 
 /** Handle half-height in px: the handle centre travels between PAD and (height - PAD). */
-const PAD = 22;
+const PAD = 16;
 
 /** Broadcast-style vertical T-bar. Mouse, touch, trackpad and stylus. */
 export function TBar({ value, onChange, onRelease }: TBarProps) {
@@ -69,7 +69,7 @@ export function TBar({ value, onChange, onRelease }: TBarProps) {
           else if (event.key === "Enter") onRelease(1);
           else if (event.key === "Escape") onRelease(0);
         }}
-        className="mk-panel relative min-h-[8rem] flex-1 cursor-ns-resize touch-none rounded-md outline-none focus-visible:border-ring"
+        className="relative min-h-[6rem] flex-1 cursor-ns-resize touch-none rounded-md border border-white/10 bg-black/30 shadow-[inset_0_2px_8px_oklch(0_0_0/60%)] outline-none focus-visible:border-ring"
       >
         {/* slot */}
         <div
@@ -91,24 +91,20 @@ export function TBar({ value, onChange, onRelease }: TBarProps) {
         ))}
         {/* handle */}
         <div
-          className="absolute inset-x-1 flex h-11 -translate-y-1/2 items-center justify-center rounded-sm border border-border"
-          style={{
-            top: `calc(${PAD}px + (100% - ${PAD * 2}px) * ${1 - value})`,
-            background: "var(--brushed-panel)",
-            boxShadow: "var(--inset-bezel)",
-          }}
+          className="mk-cap absolute inset-x-1.5 flex h-8 -translate-y-1/2 items-center justify-center rounded-[3px]"
+          style={{ top: `calc(${PAD}px + (100% - ${PAD * 2}px) * ${1 - value})` }}
         >
           <div className="flex flex-col gap-[3px]">
-            <span className="block h-px w-8 bg-engrave/60" />
-            <span className="block h-px w-8 bg-engrave/60" />
-            <span className="block h-px w-8 bg-engrave/60" />
+            <span className="block h-px w-8 bg-black/60 shadow-[0_1px_0_oklch(1_0_0/35%)]" />
+            <span className="block h-px w-8 bg-black/60 shadow-[0_1px_0_oklch(1_0_0/35%)]" />
+            <span className="block h-px w-8 bg-black/60 shadow-[0_1px_0_oklch(1_0_0/35%)]" />
           </div>
         </div>
       </div>
-      <div className="flex w-9 shrink-0 flex-col justify-between py-1">
-        <span className="mk-label text-[9px] leading-tight">PVW</span>
+      <div className="flex w-8 shrink-0 flex-col justify-between py-0.5">
+        <span className="mk-label text-[8px] leading-tight">PVW</span>
         <span className="font-mono text-[10px] text-amber">{percent}%</span>
-        <span className="mk-label text-[9px] leading-tight">PGM</span>
+        <span className="mk-label text-[8px] leading-tight">PGM</span>
       </div>
     </div>
   );

@@ -17,21 +17,16 @@ export function BusButton({ label, scene, lit, onSelect }: BusButtonProps) {
         onSelect();
       }}
       className={cn(
-        "mk-button flex h-full min-h-[3.25rem] w-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-sm px-1 py-1.5 sm:min-h-[4.5rem]",
+        "mk-button flex h-9 min-w-0 flex-col items-center justify-center gap-[3px] rounded-[3px] px-1",
         lit === "program" && "mk-lit-program",
         lit === "preview" && "mk-lit-preview",
-        !scene && "opacity-55",
+        !scene && !lit && "opacity-70",
       )}
       aria-pressed={lit !== null}
       aria-label={`${label}${scene ? ` — ${scene}` : " — unmapped"}`}
     >
-      <span className="text-sm leading-none tracking-[0.1em] sm:text-base">{label}</span>
-      <span
-        className={cn(
-          "max-w-full truncate font-mono text-[9px] leading-none tracking-wide opacity-70 sm:text-[10px]",
-          !lit && "text-muted-foreground",
-        )}
-      >
+      <span className="text-[13px] leading-none tracking-[0.1em]">{label}</span>
+      <span className="max-w-full truncate font-mono text-[7px] leading-none tracking-wide opacity-70">
         {scene ?? "UNMAPPED"}
       </span>
     </button>

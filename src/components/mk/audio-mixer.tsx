@@ -1,28 +1,19 @@
-import { Headphones, Monitor, Radio, Volume2, VolumeX } from "lucide-react";
+import { Headphones, Volume2, VolumeX } from "lucide-react";
 
-import { FADER_MAX, FADER_MIN, type AudioChannel } from "@/lib/mk/types";
+import { Fader } from "@/components/mk/fader";
+import { GrMeter, Meter, MeterScale } from "@/components/mk/meter";
+import { dbToPos, FADER_TICKS, fmtDb, powerSum } from "@/lib/mk/audio-math";
+import { LIMITER_MAX, LIMITER_MIN, type AudioChannel, type LimiterConfig } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
-
-const TICKS = [6, 0, -12, -24, -36, -60];
-const RANGE = FADER_MAX - FADER_MIN;
-const pct = (db: number) => Math.max(0, Math.min(100, ((db - FADER_MIN) / RANGE) * 100));
-const fmt = (db: number) => (db <= FADER_MIN ? "-∞" : `${db > 0 ? "+" : ""}${db.toFixed(1)}`);
-
-/** Power-sum of the peaks of several inputs = rough level of the mix they make. */
-function mixLevel(channels: AudioChannel[], levels: Record<string, number>, pick: (c: AudioChannel) => boolean) {
-  let sum = 0;
-  for (const c of channels) {
-    if (c.muted || !pick(c)) continue;
-    const db = levels[c.name] ?? -100;
-    if (db > -99) sum += 10 ** (db / 10);
-  }
-  return sum > 0 ? 10 * Math.log10(sum) : -100;
-}
 
 interface AudioMixerProps {
   channels: AudioChannel[];
   levels: Record<string, number>;
   afv: boolean;
+  limiter: LimiterConfig;
+  /** Gain reduction reported by the backend, or null when it has to be estimated. */
+  gr: number | null;
+  masterMuted: boolean;
   camOf: (name: string) => number | null;
   onVolume: (name: string, db: number) => void;
   onMute: (name: string) => void;
@@ -31,21 +22,50 @@ interface AudioMixerProps {
   onPre: (name: string) => void;
   onHearFinal: (on: boolean) => void;
   onAfv: (on: boolean) => void;
+  onLimiter: (patch: Partial<LimiterConfig>) => void;
+  onMuteOut: () => void;
 }
 
-function Meter({ db, wide }: { db: number; wide?: boolean | undefined }) {
-  const p = pct(db);
-  const clip = db >= -0.5;
+/** Small keycap used for MN / PRE / PC. */
+function Key({
+  label,
+  on,
+  tone,
+  title,
+  onClick,
+}: {
+  label: string;
+  on: boolean;
+  tone: "program" | "preview" | "amber";
+  title: string;
+  onClick: () => void;
+}) {
   return (
-    <div className={cn("relative h-full overflow-hidden rounded-[1px] bg-bezel", wide ? "w-3" : "w-2.5")}>
-      <div
-        className={cn(
-          "absolute inset-x-0 bottom-0 transition-[height] duration-75",
-          p > 90 ? "bg-program" : p > 78 ? "bg-amber" : "bg-preview",
-        )}
-        style={{ height: `${p}%` }}
-      />
-      {clip && <div className="absolute inset-x-0 top-0 h-1 bg-program" />}
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={`${label}: ${on ? "on" : "off"}`}
+      aria-pressed={on}
+      className={cn(
+        "mk-button h-[18px] min-w-0 flex-1 rounded-[3px] px-0 text-[8px] tracking-normal",
+        on && (tone === "program" ? "mk-lit-program" : tone === "preview" ? "mk-lit-preview" : "mk-lit-amber"),
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function FaderScale() {
+  return (
+    <div className="relative h-full w-4 font-mono text-[7px] leading-none text-engrave">
+      {FADER_TICKS.map((t) => (
+        <span key={t} className="absolute left-0 -translate-y-1/2" style={{ top: `calc(8px + (100% - 16px) * ${1 - dbToPos(t)})` }}>
+          {t}
+        </span>
+      ))}
+      <span className="absolute bottom-[2px] left-0">∞</span>
     </div>
   );
 }
@@ -55,159 +75,127 @@ function Strip({
   channel: c,
   level,
   cam,
-  onVolume,
-  onMute,
-  onMonitor,
-  onStream,
-  onPre,
+  props,
 }: {
   channel: AudioChannel;
   level: number;
   cam: number | null;
-  onVolume: AudioMixerProps["onVolume"];
-  onMute: AudioMixerProps["onMute"];
-  onMonitor: AudioMixerProps["onMonitor"];
-  onStream: AudioMixerProps["onStream"];
-  onPre: AudioMixerProps["onPre"];
+  props: AudioMixerProps;
 }) {
   return (
-    <div className="flex w-[5rem] shrink-0 flex-col items-center gap-1 rounded-sm bg-bezel/40 p-1 [&>*]:shrink-0">
-      <span className="w-full truncate text-center text-[10px] font-bold text-foreground" title={c.name}>
+    <div className="flex w-[4.6rem] shrink-0 flex-col items-center gap-1 rounded-[4px] border border-white/5 bg-black/20 px-1 py-1">
+      <span className="w-full truncate text-center text-[10px] leading-none font-bold text-foreground" title={c.name}>
         {c.name}
       </span>
-      <span className="font-mono text-[9px] text-engrave">
-        {fmt(c.db)} dB{cam !== null ? ` · C${cam + 1}` : ""}
+      <span className="font-mono text-[8px] leading-none text-engrave">
+        {fmtDb(c.db)}
+        {cam !== null ? ` C${cam + 1}` : ""}
       </span>
 
-      <div className="flex h-28 shrink-0 items-stretch gap-1.5">
+      <div className="flex min-h-0 flex-1 items-stretch gap-1">
         <Meter db={c.muted ? -100 : level} />
-        <input
-          type="range"
-          min={FADER_MIN}
-          max={FADER_MAX}
-          step={0.5}
-          value={c.db}
-          onChange={(e) => onVolume(c.name, Number(e.target.value))}
-          onDoubleClick={() => onVolume(c.name, 0)}
-          aria-label={`${c.name} volume`}
-          className="h-28 w-4 accent-foreground [direction:rtl] [writing-mode:vertical-lr]"
-        />
-        <div className="flex flex-col justify-between font-mono text-[7px] text-engrave">
-          {TICKS.map((t) => (
-            <span key={t}>{t === FADER_MIN ? "∞" : t}</span>
-          ))}
-        </div>
+        <Fader db={c.db} onChange={(db) => props.onVolume(c.name, db)} label={`${c.name} volume`} />
+        <FaderScale />
       </div>
 
       <button
         type="button"
-        onClick={() => onMute(c.name)}
+        onClick={() => props.onMute(c.name)}
         aria-label={c.muted ? `Unmute ${c.name}` : `Mute ${c.name}`}
-        className={cn("mk-button flex h-8 w-full items-center justify-center rounded-sm", c.muted && "mk-lit-program")}
+        aria-pressed={c.muted}
+        className={cn("mk-button flex h-[22px] w-full items-center justify-center rounded-[3px]", c.muted && "mk-lit-program")}
       >
-        {c.muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+        {c.muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
       </button>
 
-      <div className="grid w-full grid-cols-2 gap-1">
-        <button
-          type="button"
-          onClick={() => onStream(c.name)}
-          title={c.stream ? "On the FINAL mix (YouTube + recording) — tap to remove" : "Not on the final mix — tap to add"}
-          aria-label={`${c.name} to main output: ${c.stream ? "on" : "off"}`}
-          aria-pressed={c.stream}
-          className={cn(
-            "mk-button flex h-7 min-w-0 items-center justify-center gap-0.5 rounded-sm px-0 text-[9px]",
-            c.stream && "mk-lit-program",
-          )}
-        >
-          <Radio className="h-3 w-3 shrink-0" />
-          <span>MAIN</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onPre(c.name)}
-          title={c.pre ? "In the pre-listen mix (Listen button) — tap to remove" : "Not in pre-listen — tap to add"}
-          aria-label={`${c.name} pre-listen: ${c.pre ? "on" : "off"}`}
-          aria-pressed={c.pre}
-          className={cn(
-            "mk-button flex h-7 min-w-0 items-center justify-center gap-0.5 rounded-sm px-0 text-[9px]",
-            c.pre && "mk-lit-preview",
-          )}
-        >
-          <Headphones className="h-3 w-3 shrink-0" />
-          <span>PRE</span>
-        </button>
+      <div className="flex w-full gap-[3px]">
+        <Key label="MN" on={c.stream} tone="program" title="On the FINAL mix (YouTube + recording)" onClick={() => props.onStream(c.name)} />
+        <Key label="PRE" on={c.pre} tone="preview" title="In the pre-listen mix (the Listen button)" onClick={() => props.onPre(c.name)} />
+        <Key label="PC" on={c.monitor !== "none"} tone="amber" title="Also on the OBS PC's own headphones" onClick={() => props.onMonitor(c.name)} />
       </div>
-      <button
-        type="button"
-        onClick={() => onMonitor(c.name)}
-        title="Also hear it on the OBS PC's own headphones / monitoring device"
-        aria-label={`${c.name} on OBS PC headphones: ${c.monitor !== "none" ? "on" : "off"}`}
-        aria-pressed={c.monitor !== "none"}
-        className={cn(
-          "mk-button flex h-6 w-full items-center justify-center gap-0.5 rounded-sm px-0 text-[9px]",
-          c.monitor !== "none" && "mk-lit-amber",
-        )}
-      >
-        <Monitor className="h-3 w-3 shrink-0" />
-        <span>PC</span>
-      </button>
     </div>
   );
 }
 
-/** The final output: everything routed to MAIN. Level only — OBS has no master fader. */
-function Master({
-  level,
-  preLevel,
-  count,
-  hearFinal,
-  onHearFinal,
-}: {
-  level: number;
-  preLevel: number;
-  count: number;
-  hearFinal: boolean;
-  onHearFinal: (on: boolean) => void;
-}) {
+/** The final output: everything routed to MN, with the limiter. */
+function Master(props: AudioMixerProps) {
+  const { channels, levels, limiter, masterMuted } = props;
+  const onMain = channels.filter((c) => c.stream);
+  const live = onMain.filter((c) => !c.muted);
+  const mix = powerSum(live.map((c) => levels[c.name] ?? -100));
+  const level = masterMuted ? -100 : mix;
+  const hearFinal = onMain.length > 0 && onMain.every((c) => c.pre);
+
+  // OBS cannot report gain reduction, so estimate it from how close the mix is to the ceiling.
+  const engaged = limiter.on && !masterMuted && mix >= limiter.threshold - 0.6;
+  const gr = !limiter.on ? 0 : (props.gr ?? (engaged ? 2.5 : 0));
+  const limiting = limiter.on && gr > 0.1;
+
   return (
-    <div className="flex w-[5.5rem] shrink-0 flex-col items-center gap-1 rounded-sm border border-program/60 bg-program-dim/30 p-1 [&>*]:shrink-0">
-      <span className="w-full truncate text-center text-[10px] font-bold tracking-[0.2em] text-program">MASTER</span>
-      <span className="-mt-1 w-full text-center font-mono text-[8px] leading-tight text-engrave">
-        FINAL OUT
-        <br />
-        YouTube · Record
-      </span>
-      <span className="font-mono text-[9px] text-engrave">
-        {count} input{count === 1 ? "" : "s"}
-      </span>
-      <div className="flex h-28 shrink-0 items-stretch gap-1.5">
+    <div className="flex w-[8.6rem] shrink-0 flex-col gap-1 rounded-[4px] border border-program/50 bg-program-dim/25 px-1.5 py-1 shadow-[inset_0_0_14px_oklch(0.4_0.15_26/25%)]">
+      <div className="flex items-baseline justify-between leading-none">
+        <span className="text-[10px] font-bold tracking-[0.2em] text-program">MASTER</span>
+        <span className="font-mono text-[8px] text-engrave">{live.length} in</span>
+      </div>
+
+      <div className="flex min-h-0 flex-1 justify-center gap-1.5">
         <Meter db={level} wide />
         <Meter db={level - 0.7} wide />
-        <div className="flex flex-col justify-between font-mono text-[7px] text-engrave">
-          {TICKS.map((t) => (
-            <span key={t}>{t === FADER_MIN ? "∞" : t}</span>
-          ))}
+        <MeterScale />
+        <div className="flex flex-col items-center gap-0.5" title="Limiter gain reduction">
+          <div className="min-h-0 flex-1">
+            <GrMeter gr={gr} />
+          </div>
+          <span className="font-mono text-[7px] leading-none text-amber">GR</span>
         </div>
       </div>
-      <div className="flex w-full items-center gap-1 font-mono text-[8px] text-engrave">
-        <span>PRE</span>
-        <div className="h-1.5 flex-1 overflow-hidden rounded-[1px] bg-bezel">
-          <div className="h-full bg-preview" style={{ width: `${pct(preLevel)}%` }} />
-        </div>
-      </div>
+
       <button
         type="button"
-        onClick={() => onHearFinal(!hearFinal)}
-        aria-pressed={hearFinal}
-        title="Put every MAIN input in the pre-listen mix too, so Listen plays the whole final mix"
-        className={cn(
-          "mk-button flex h-8 w-full items-center justify-center gap-0.5 rounded-sm px-0 text-[9px]",
-          hearFinal && "mk-lit-preview",
-        )}
+        onClick={props.onMuteOut}
+        aria-pressed={masterMuted}
+        title="Silence the whole final mix. Press again to bring back exactly what was live."
+        className={cn("mk-button flex h-6 w-full items-center justify-center gap-1 rounded-[3px] text-[9px]", masterMuted && "mk-lit-program")}
       >
-        <Headphones className="h-3 w-3 shrink-0" />
-        <span>HEAR FINAL</span>
+        {masterMuted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+        MUTE OUT
+      </button>
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => props.onLimiter({ on: !limiter.on })}
+          aria-pressed={limiter.on}
+          title={`Limiter: a brick-wall ceiling at ${limiter.threshold} dB on every input of the final mix`}
+          className={cn("mk-button flex h-6 shrink-0 items-center gap-1 rounded-[3px] px-1.5 text-[9px]", limiter.on && (limiting ? "mk-lit-amber" : "mk-lit-preview"))}
+        >
+          <span className={cn("h-1.5 w-1.5 rounded-full", limiting ? "bg-program shadow-[0_0_6px_var(--color-program)]" : "bg-current opacity-60")} />
+          LIM
+        </button>
+        <input
+          type="range"
+          className="mk-range min-w-0 flex-1"
+          min={LIMITER_MIN}
+          max={LIMITER_MAX}
+          step={0.5}
+          value={limiter.threshold}
+          onChange={(e) => props.onLimiter({ threshold: Number(e.target.value) })}
+          onDoubleClick={() => props.onLimiter({ threshold: -6 })}
+          aria-label="Limiter ceiling"
+          title="Limiter ceiling (double-click = -6 dB)"
+        />
+        <span className="w-6 shrink-0 text-right font-mono text-[9px] text-amber">{limiter.threshold}</span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => props.onHearFinal(!hearFinal)}
+        aria-pressed={hearFinal}
+        title="Put every MN input in the pre-listen mix too, so Listen plays the whole final mix"
+        className={cn("mk-button flex h-6 w-full items-center justify-center gap-1 rounded-[3px] text-[9px]", hearFinal && "mk-lit-preview")}
+      >
+        <Headphones className="h-3 w-3" />
+        HEAR
       </button>
     </div>
   );
@@ -215,21 +203,15 @@ function Master({
 
 export function AudioMixer(props: AudioMixerProps) {
   const { channels, levels, afv, camOf, onAfv } = props;
-  const levelOf = (c: AudioChannel) => levels[c.name] ?? -100;
-  const finalLevel = mixLevel(channels, levels, (c) => c.stream);
-  const preLevel = mixLevel(channels, levels, (c) => c.pre);
-  const onMain = channels.filter((c) => c.stream);
-  const hearFinal = onMain.length > 0 && onMain.every((c) => c.pre);
-
   return (
-    <section className="mk-panel flex shrink-0 flex-col rounded-md p-2">
-      <header className="mb-2 flex items-center gap-2">
+    <section className="mk-panel flex h-full min-h-0 min-w-0 flex-col rounded-md p-1.5">
+      <header className="mb-1 flex items-center gap-2">
         <span className="mk-label text-foreground">Audio</span>
-        <span className="mk-label hidden text-[9px] sm:block">MAIN = final out (YouTube / record) · PRE = pre-listen · PC = OBS PC headphones</span>
+        <span className="mk-label hidden truncate text-[8px] xl:block">MN = final out · PRE = pre-listen · PC = OBS PC headphones</span>
         <button
           type="button"
           onClick={() => onAfv(!afv)}
-          className={cn("mk-button ml-auto h-7 rounded-sm px-2 text-[10px]", afv && "mk-lit-amber")}
+          className={cn("mk-button ml-auto h-[18px] rounded-[3px] px-2 text-[9px]", afv && "mk-lit-amber")}
           title="Audio follows video: cam-named inputs unmute when their CAM is on air"
         >
           AFV {afv ? "ON" : "OFF"}
@@ -238,31 +220,16 @@ export function AudioMixer(props: AudioMixerProps) {
       {channels.length === 0 ? (
         <p className="mk-label py-4 text-center text-[10px]">No audio inputs</p>
       ) : (
-        <div className="flex items-stretch gap-2">
-          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-hidden pb-1">
+        <div className="flex min-h-0 flex-1 items-stretch gap-1.5">
+          <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto overflow-y-hidden">
             {channels.map((c) => (
-              <Strip
-                key={c.name}
-                channel={c}
-                level={levelOf(c)}
-                cam={camOf(c.name)}
-                onVolume={props.onVolume}
-                onMute={props.onMute}
-                onMonitor={props.onMonitor}
-                onStream={props.onStream}
-                onPre={props.onPre}
-              />
+              <Strip key={c.name} channel={c} level={levels[c.name] ?? -100} cam={camOf(c.name)} props={props} />
             ))}
           </div>
-          <Master
-            level={finalLevel}
-            preLevel={preLevel}
-            count={onMain.filter((c) => !c.muted).length}
-            hearFinal={hearFinal}
-            onHearFinal={props.onHearFinal}
-          />
+          <Master {...props} />
         </div>
       )}
     </section>
   );
 }
+

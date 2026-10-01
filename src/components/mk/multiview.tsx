@@ -85,32 +85,37 @@ function Monitor({
   return (
     <div
       className={cn(
-        "relative flex aspect-video min-h-0 min-w-0 flex-col overflow-hidden rounded-sm border-2 bg-bezel",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[3px] border-2 bg-bezel",
         kind === "program" ? "border-program shadow-[var(--glow-program)]" : "border-preview",
       )}
+      // Largest picture (16:9) + tally bar that fits the cell, so the monitors always fit the screen.
+      style={{ width: "min(100cqw, calc((100cqh - 23px) * 16 / 9))" }}
     >
-      {frame ? (
-        <img src={frame} alt={`${kind} video`} draggable={false} className="absolute inset-0 h-full w-full bg-black object-contain" />
-      ) : (
-        <>
-          <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent_0,transparent_3px,var(--panel)_4px)] opacity-40" />
-          <div className="relative flex flex-1 flex-col items-center justify-center gap-1 p-2 text-center">
-            <span className="text-2xl font-bold tracking-[0.2em] text-foreground sm:text-4xl">
-              {cam === null ? "—" : camLabel(cam)}
-            </span>
-            <span className="mk-label max-w-full truncate text-[10px]">{scene ?? "No scene"}</span>
-          </div>
-        </>
-      )}
-      {frame && (
-        <span className="absolute bottom-6 left-1 rounded-sm bg-black/60 px-1.5 font-mono text-[10px] text-foreground">
-          {cam === null ? scene : camLabel(cam)}
-        </span>
-      )}
-      {children}
+      {/* the picture: always exactly 16:9, graphics sit on it just like on the real output */}
+      <div className="relative aspect-video w-full overflow-hidden bg-black">
+        {frame ? (
+          <img src={frame} alt={`${kind} video`} draggable={false} className="absolute inset-0 h-full w-full bg-black object-contain" />
+        ) : (
+          <>
+            <div className="absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent_0,transparent_3px,var(--panel)_4px)] opacity-40" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-center">
+              <span className="text-2xl font-bold tracking-[0.2em] text-foreground @[28rem]:text-4xl">
+                {cam === null ? "—" : camLabel(cam)}
+              </span>
+              <span className="mk-label max-w-full truncate text-[10px]">{scene ?? "No scene"}</span>
+            </div>
+          </>
+        )}
+        {frame && (
+          <span className="absolute bottom-1 left-1 rounded-[2px] bg-black/60 px-1.5 font-mono text-[10px] text-foreground">
+            {cam === null ? scene : camLabel(cam)}
+          </span>
+        )}
+        {children}
+      </div>
       <div
         className={cn(
-          "relative mt-auto py-0.5 text-center text-[10px] font-bold tracking-[0.3em]",
+          "py-[3px] text-center text-[10px] leading-[11px] font-bold tracking-[0.3em]",
           kind === "program" ? "bg-program text-destructive-foreground" : "bg-preview text-primary-foreground",
         )}
       >
@@ -127,8 +132,11 @@ export function Multiview(props: MultiviewProps) {
   const programFrame = useFeed(props.programScene, live, props.fps, props.getFrame);
 
   return (
-    <section className="mk-panel grid grid-cols-2 gap-2 rounded-md p-2 sm:gap-3">
+    <section className="mk-panel grid h-full min-h-0 grid-cols-2 gap-1.5 rounded-md p-1.5">
+      <div className="flex aspect-video min-h-0 items-center justify-center fit:aspect-auto" style={{ containerType: "size" }}>
       <Monitor kind="preview" cam={props.preview} scene={props.previewScene} frame={previewFrame} />
+      </div>
+      <div className="flex aspect-video min-h-0 items-center justify-center fit:aspect-auto" style={{ containerType: "size" }}>
       <Monitor kind="program" cam={props.program} scene={props.programScene} frame={programFrame}>
         <div className="absolute top-1 left-1 flex flex-wrap gap-1">
           {props.streaming && <span className="mk-lit-program rounded-sm px-1.5 text-[9px] font-bold">ON AIR</span>}
@@ -149,11 +157,12 @@ export function Multiview(props: MultiviewProps) {
           {timecode(now)}
         </span>
         {props.transitioning && (
-          <div className="absolute inset-x-0 bottom-5 h-1 bg-led-off">
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-led-off">
             <div className="h-full bg-amber" style={{ width: `${Math.round(props.tBar * 100)}%` }} />
           </div>
         )}
       </Monitor>
+      </div>
     </section>
   );
 }

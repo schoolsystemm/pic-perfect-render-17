@@ -5,16 +5,15 @@ import type { MkConfig } from "@/lib/mk/types";
 import { engine } from "@/lib/mk/use-switcher";
 import { cn } from "@/lib/utils";
 
-/** Hear the OBS program audio on this device. */
+/** Hear the OBS pre-listen audio on this device. */
 export function ListenControl({ config }: { config: MkConfig }) {
   const { status, message } = useListen();
   const on = status !== "off";
   const url = resolveListenUrl(config.listenUrl, config.host);
-  const label =
-    status === "live" ? "LIVE" : status === "connecting" ? "…" : status === "error" ? "RETRY" : "OFF";
+  const label = status === "live" ? "LIVE" : status === "connecting" ? "…" : status === "error" ? "RETRY" : "OFF";
 
   return (
-    <div className="ml-auto flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5">
       {on && (
         <input
           type="range"
@@ -23,7 +22,7 @@ export function ListenControl({ config }: { config: MkConfig }) {
           step={0.05}
           value={config.listenVolume}
           aria-label="Listen volume"
-          className="h-7 w-20"
+          className="mk-range w-20"
           onChange={(e) => {
             const v = Number(e.target.value);
             listener.setVolume(v);
@@ -31,14 +30,14 @@ export function ListenControl({ config }: { config: MkConfig }) {
           }}
         />
       )}
-      {message && <span className="hidden font-mono text-[9px] text-amber sm:block">{message}</span>}
+      {message && <span className="hidden font-mono text-[9px] text-amber xl:block">{message}</span>}
       <button
         type="button"
         onClick={() => (on ? listener.stop() : void listener.start(url, config.listenVolume))}
         aria-pressed={on}
-        className={cn("mk-button flex h-7 items-center gap-1 rounded-sm px-2 text-[10px]", status === "live" && "mk-lit-program")}
+        className={cn("mk-button flex h-7 items-center gap-1 rounded-[3px] px-2 text-[9px] tracking-[0.12em]", status === "live" && "mk-lit-program")}
       >
-        {on ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+        {on ? <Volume2 className="h-3 w-3" /> : <VolumeX className="h-3 w-3" />}
         Pre-listen {label}
       </button>
     </div>

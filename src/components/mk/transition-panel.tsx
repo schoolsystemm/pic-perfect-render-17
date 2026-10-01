@@ -36,9 +36,9 @@ export function TransitionPanel({
   onTBarRelease,
 }: TransitionPanelProps) {
   return (
-    <aside className="mk-panel flex w-full min-w-0 flex-1 flex-col gap-2 rounded-md p-2 sm:p-3">
+    <aside className="mk-panel flex min-h-0 w-full min-w-0 flex-1 flex-col gap-1.5 rounded-md p-1.5">
       {/* DSK 1 + DSK 2 side by side */}
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 gap-1">
         {Array.from({ length: DSK_COUNT }, (_, i) => (
           <button
             key={i}
@@ -48,16 +48,16 @@ export function TransitionPanel({
               onDsk(i);
             }}
             className={cn(
-              "mk-button flex h-14 min-w-0 flex-col items-center justify-center gap-0.5 rounded-sm px-1 sm:h-16",
+              "mk-button flex h-9 min-w-0 flex-col items-center justify-center gap-[3px] rounded-[3px] px-1",
               dskActive[i] && "mk-lit-amber",
             )}
             aria-pressed={!!dskActive[i]}
           >
-            <span className="flex items-baseline gap-1 text-sm leading-none">
+            <span className="flex items-baseline gap-1 text-[13px] leading-none">
               DSK {i + 1}
-              <span className="font-mono text-[9px] opacity-80">{dskActive[i] ? "ON" : "OFF"}</span>
+              <span className="font-mono text-[8px] opacity-80">{dskActive[i] ? "ON" : "OFF"}</span>
             </span>
-            <span className="max-w-full truncate font-mono text-[9px] leading-none font-normal tracking-normal opacity-70">
+            <span className="max-w-full truncate font-mono text-[7px] leading-none font-normal tracking-normal opacity-70">
               {dsks[i]?.source || "not set"}
             </span>
           </button>
@@ -65,12 +65,12 @@ export function TransitionPanel({
       </div>
 
       {/* Transition type + rate (speed) */}
-      <div className="grid gap-1.5">
+      <div className="grid gap-1">
         <select
           value={transitionName}
           onChange={(e) => onTransition(e.target.value)}
           aria-label="Transition type"
-          className="h-8 w-full min-w-0 rounded-sm border border-border bg-input px-1.5 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+          className="mk-field h-7 w-full min-w-0 rounded-[3px] px-1.5 text-[11px]"
         >
           {(transitions.length ? transitions : ["Cut", "Fade", "Fade to Color", "Swipe"]).map((name) => (
             <option key={name} value={name}>
@@ -85,11 +85,11 @@ export function TransitionPanel({
               type="button"
               onClick={() => onDuration(ms)}
               className={cn(
-                "mk-button h-8 min-w-0 rounded-sm px-0 font-mono text-[10px]",
+                "mk-button h-6 min-w-0 rounded-[3px] px-0 font-mono text-[9px]",
                 duration === ms && "mk-lit-amber",
               )}
             >
-              {(ms / 1000).toFixed(1)}s
+              {(ms / 1000).toFixed(1)}S
             </button>
           ))}
         </div>
@@ -102,18 +102,18 @@ export function TransitionPanel({
           onAutoTake();
         }}
         className={cn(
-          "mk-button flex h-14 w-full min-w-0 flex-col items-center justify-center rounded-sm px-1 text-base sm:h-16",
+          "mk-button flex h-10 w-full min-w-0 flex-col items-center justify-center gap-[3px] rounded-[3px] px-1 text-sm",
           transitioning ? "mk-lit-amber" : "text-foreground",
         )}
       >
         AUTO TAKE
-        <span className="max-w-full truncate font-mono text-[10px] font-normal tracking-normal opacity-80">
+        <span className="max-w-full truncate font-mono text-[8px] font-normal tracking-normal uppercase opacity-80">
           {transitionName} · {duration}ms
         </span>
       </button>
 
-      <div className="flex min-h-[9rem] flex-1 flex-col gap-1 sm:min-h-[12rem]">
-        <span className="mk-label text-center">T-Bar</span>
+      <div className="flex min-h-[7rem] flex-1 flex-col gap-1 fit:min-h-0">
+        <span className="mk-label text-center text-[9px]">T-Bar</span>
         <TBar value={tBar} onChange={onTBarChange} onRelease={onTBarRelease} />
       </div>
 
@@ -123,7 +123,7 @@ export function TransitionPanel({
           event.preventDefault();
           onCut();
         }}
-        className="mk-button h-14 w-full rounded-sm text-lg text-foreground hover:mk-lit-program active:mk-lit-program sm:h-16"
+        className="mk-button h-10 w-full rounded-[3px] text-base text-foreground active:mk-lit-program"
       >
         CUT
       </button>
