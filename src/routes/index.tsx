@@ -14,6 +14,7 @@ import { StatusBar } from "@/components/mk/status-bar";
 import { TransitionPanel } from "@/components/mk/transition-panel";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { FX_SCENE } from "@/lib/mk/fx";
+import { LivePanel } from "@/components/mk/live-panel";
 import { startPrompterHost } from "@/lib/mk/prompter";
 import { useShortcuts } from "@/lib/mk/use-shortcuts";
 import { cn } from "@/lib/utils";
@@ -40,23 +41,23 @@ export const Route = createFileRoute("/")({
   component: Switcher,
 });
 
-type Panel = "multiview" | "wall" | "audio" | "status" | "graphics" | "sounds";
-const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Tools", graphics: "Graphics", sounds: "Sounds" };
+type Panel = "multiview" | "wall" | "audio" | "status" | "graphics" | "sounds" | "live";
+const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Tools", graphics: "Graphics", sounds: "Sounds", live: "Live FX" };
 
 function Switcher() {
   const state = useSwitcher();
   useShortcuts(state.config.shortcuts);
   // Teleprompter host: keeps the /prompter output window in sync even when the Tools panel is hidden.
   useEffect(() => startPrompterHost(), []);
-  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, wall: true, audio: true, status: true, graphics: true, sounds: true });
+  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, wall: true, audio: true, status: true, graphics: true, sounds: true, live: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
   // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
   const mixInputs = state.audio.filter((c) => !/^MK /i.test(c.name));
   const hiddenAudio = state.config.hiddenAudio;
   const stripInputs = mixInputs.filter((c) => !hiddenAudio.includes(c.name));
-  const bottom = show.audio || show.status || show.graphics || show.sounds;
+  const bottom = show.audio || show.status || show.graphics || show.sounds || show.live;
 
-  const menus = (["multiview", "wall", "audio", "status", "graphics", "sounds"] as Panel[]).map((p) => (
+  const menus = (["multiview", "wall", "audio", "status", "graphics", "sounds", "live"] as Panel[]).map((p) => (
     <button
       key={p}
       type="button"
@@ -93,7 +94,8 @@ function Switcher() {
                 program={state.program}
                 preview={state.preview}
                 programScene={state.programScene}
-                programFeed={state.fx.running || state.fx.layout ? FX_SCENE : null}
+                programFeed={state.live.on && state.live.progBus ? state.live.progBus : state.fx.running || state.fx.layout ? FX_SCENE : null}
+                previewFeed={state.live.on ? state.live.previewBus : null}
                 previewScene={state.previewScene}
                 tBar={state.tBar}
                 transitioning={state.transitioning}
@@ -176,6 +178,18 @@ function Switcher() {
                   <GraphicsPanel graphics={state.config.graphics} active={state.gfxActive} />
                 </div>
               )}
+              {show.live && (
+                <div className="min-w-0 fit:w-[17rem] fit:shrink-0">
+                  <LivePanel
+                    live={state.live}
+                    pips={state.config.pips}
+                    ad={state.config.ad}
+                    scenes={state.config.camScenes.filter((s): s is string => !!s)}
+                    connected={state.status === "connected"}
+                    busy={state.fx.running}
+                  />
+                </div>
+              )}
               {show.sounds && (
                 <div className="h-32 min-w-0 fit:h-auto fit:w-[13.5rem] fit:shrink-0">
                   <SoundPad />
@@ -200,6 +214,12 @@ function Switcher() {
             transitioning={state.transitioning}
             fx={state.fx}
             fxConfig={state.config.fx}
+            live={state.live}
+            pipScenes={state.config.pips.map((p) => p.scene)}
+            adScene={state.config.ad.scene}
+            onPip={(slot) => void engine.togglePip(slot)}
+            onSqueezeMerge={() => void engine.squeezeMerge()}
+            onMove={(dir) => void engine.moveTake(dir)}
             onSqueeze={() => void engine.squeeze()}
             onLayout={(kind) => void engine.toggleLayout(kind)}
             onFxOption={(patch) => engine.setFx(patch)}
