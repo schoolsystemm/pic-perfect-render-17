@@ -326,6 +326,11 @@ export class SwitcherEngine {
         break;
       case "programScene":
         // During an effect the real program is the helper "MK FX" scene; the engine keeps showing the cam.
+        // OBS left a held Merge on its own (operator switched scene in OBS): drop the lamp.
+        if (this.state.fx.layout && !this.state.fx.running && event.scene !== FX_SCENE) {
+          this.fxHold = null;
+          this.set({ fx: { running: false, layout: null } });
+        }
         if (this.fxBusy()) break;
         if (this.live) {
           const main = this.live.mains[event.scene];
@@ -917,7 +922,7 @@ export class SwitcherEngine {
     const { running, layout } = this.state.fx;
     if (running) return;
     if (this.live) {
-      this.notice("Turn off PIP 1 / PIP 2 / Squeeze Merge first");
+      this.notice("Turn off PIP 1 / PIP 2 / SQZ MERGE first, then use MERGE");
       return;
     }
     if (layout === kind) return this.closeLayout();
@@ -937,10 +942,13 @@ export class SwitcherEngine {
       await t.fxCutTo(FX_SCENE);
       onAir = true;
       await this.fxAnimate(ms, (e) => this.fxDraw(pair, this.fxLayoutFrame(kind, e, w, h)));
+      // The lamp only lights when OBS really is on the merge scene (read back, not assumed).
+      const real = await t.getCurrentProgramScene().catch(() => null);
+      if (real !== FX_SCENE) throw new Error("OBS is not on the merge scene");
       this.fxHold = { ...pair, w, h };
       this.set({ fx: { running: false, layout: kind } });
     } catch {
-      this.notice(`${kind.toUpperCase()} failed — check OBS`);
+      this.notice(`${kind.toUpperCase()} did not reach OBS — check the OBS connection`);
       if (onAir) await t.fxCutTo(pair.a).catch(() => {});
       this.fxHold = null;
       this.set({ fx: { running: false, layout: null } });
