@@ -2,6 +2,7 @@
 // name, load it any time, and share it as a file or a link. Stored in this browser.
 import { useSyncExternalStore } from "react";
 
+import { cleanScrolls } from "./config";
 import { safeImage } from "./graphics";
 import {
   BADGE_STYLES,
@@ -103,6 +104,8 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
         bgOpacity: num(r["bgOpacity"], d.bgOpacity, 0, 100),
         textColor: hex(r["textColor"], d.textColor),
         font: oneOf(r["font"], GFX_FONTS, d.font),
+        loop: bool(r["loop"], d.loop),
+        scrolls: Array.isArray(r["scrolls"]) ? cleanScrolls(r["scrolls"]) : d.scrolls,
       } as LayerData<K>;
     }
     case "clock": {

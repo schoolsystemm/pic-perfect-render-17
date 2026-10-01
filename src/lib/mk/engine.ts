@@ -23,6 +23,7 @@ import {
   type MkConfig,
   type MonitorType,
   type OutputState,
+  type ScrollPreset,
   type SwitcherState,
 } from "./types";
 
@@ -732,6 +733,7 @@ export class SwitcherEngine {
       this.notice("Not connected");
       return;
     }
+    if (id === "ticker") this.cancelScrollTimer();
     const next = !this.state.gfxActive[id];
     this.set({ gfxActive: { ...this.state.gfxActive, [id]: next } });
     try {
@@ -742,8 +744,107 @@ export class SwitcherEngine {
     }
   }
 
+  private scrollRun = 0;
+  private scrollTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** A manual ticker toggle cancels any pending "run once, then off" timer. */
+  private cancelScrollTimer() {
+    this.scrollRun++;
+    if (this.scrollTimer) clearTimeout(this.scrollTimer);
+    this.scrollTimer = null;
+  }
+
+  /**
+   * Fire a ready-made scroll: load it into the ticker and take it to air.
+   * If the ticker is already up it is taken down and brought back so the message restarts.
+   * A "once" scroll takes itself off air when it has crossed the screen.
+   */
+  async playScroll(index: number) {
+    const preset = this.state.config.graphics.ticker.scrolls[index];
+    if (preset) await this.runScroll(preset);
+  }
+
+  /** Send a typed message on air using the ticker's current label, pace and direction. */
+  async playText(text: string) {
+    const { ticker } = this.state.config.graphics;
+    const clean = text.trim().slice(0, 400);
+    if (!clean) return;
+    await this.runScroll({ name: clean.slice(0, 24), text: clean, label: ticker.label, speed: ticker.speed, direction: ticker.direction, loop: ticker.loop });
+  }
+
+  private async runScroll(preset: ScrollPreset) {
+    if (!this.transport) {
+      this.notice("Not connected");
+      return;
+    }
+    this.cancelScrollTimer();
+    const run = this.scrollRun;
+    const g = this.state.config.graphics;
+    this.updateConfig({
+      graphics: {
+        ...g,
+        ticker: { ...g.ticker, text: preset.text, label: preset.label, speed: preset.speed, direction: preset.direction, loop: preset.loop },
+      },
+    });
+    const pending = this.gfxTimers.ticker;
+    if (pending) clearTimeout(pending);
+    const name = gfxName("ticker");
+    try {
+      if (this.state.gfxActive.ticker) {
+        this.set({ gfxActive: { ...this.state.gfxActive, ticker: false } });
+        await this.transport.setGraphicVisible(name, false).catch(() => {});
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      if (!this.state.demo) await this.transport.updateGraphic(name, layerUrl("ticker", this.state.config.graphics));
+      if (run !== this.scrollRun) return;
+      await this.transport.setGraphicVisible(name, true);
+      this.set({ gfxActive: { ...this.state.gfxActive, ticker: true } });
+    } catch {
+      this.notice("Graphics not set up in OBS yet — Settings → Graphics → Set up");
+      return;
+    }
+    if (!preset.loop) {
+      this.scrollTimer = setTimeout(() => {
+        if (run === this.scrollRun && this.state.gfxActive.ticker) void this.toggleGraphic("ticker");
+      }, (preset.speed + 1.4) * 1000);
+    }
+  }
+
+  /** Save what the ticker is set to right now as a ready-made scroll. */
+  addScroll(name?: string) {
+    const { ticker } = this.state.config.graphics;
+    if (!ticker.text.trim() || ticker.scrolls.length >= 12) return;
+    const label = (name ?? ticker.text).trim().slice(0, 24);
+    this.updateConfig({
+      graphics: {
+        ...this.state.config.graphics,
+        ticker: {
+          ...ticker,
+          scrolls: [
+            ...ticker.scrolls,
+            { name: label, text: ticker.text, label: ticker.label, speed: ticker.speed, direction: ticker.direction, loop: ticker.loop },
+          ],
+        },
+      },
+    });
+  }
+
+  removeScroll(index: number) {
+    const { ticker } = this.state.config.graphics;
+    this.updateConfig({
+      graphics: { ...this.state.config.graphics, ticker: { ...ticker, scrolls: ticker.scrolls.filter((_, i) => i !== index) } },
+    });
+  }
+
   /** Load a saved design from the library into its layer (it stays off air until you take it). */
   loadSavedGraphic(item: SavedGraphic) {
+    if (item.layer === "ticker") {
+      // A saved look must not wipe the operator's own scroll list.
+      const keep = this.state.config.graphics.ticker.scrolls;
+      this.setGraphic("ticker", { ...(item.data as GraphicsConfig["ticker"]), scrolls: keep });
+      this.notice(`Loaded "${item.name}"`);
+      return;
+    }
     this.setGraphic(item.layer, item.data as never);
     this.notice(`Loaded "${item.name}"`);
   }

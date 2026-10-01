@@ -114,6 +114,9 @@ function lower(g: GraphicsConfig) {
 
 function ticker(g: GraphicsConfig) {
   const { text, label, speed, accent, size, direction, pos, style } = g.ticker;
+  const secs = Math.max(5, num(speed, 22, 5, 120));
+  // One pass, then the bar slides away on its own (the engine also takes it off air).
+  const once = g.ticker.loop === false;
   const k = scale(size);
   const edge = pos === "top" ? "top:0" : "bottom:0";
   const from = pos === "top" ? "-100%" : "100%";
@@ -128,12 +131,13 @@ function ticker(g: GraphicsConfig) {
         ? `background:${rgba(g.ticker.bg, g.ticker.bgOpacity)};border-top:.25vw solid ${a};border-bottom:.25vw solid ${a};box-sizing:border-box`
         : `background:${rgba(g.ticker.bg, g.ticker.bgOpacity)}`;
   return page(
-    `.tk{position:absolute;left:0;right:0;${edge};height:${(7 * k).toFixed(2)}vh;display:flex;${bgc};color:${txt};font-family:${font(g.ticker.font)};overflow:hidden;animation:up .5s ease both}
+    `.tk{position:absolute;left:0;right:0;${edge};height:${(7 * k).toFixed(2)}vh;display:flex;${bgc};color:${txt};font-family:${font(g.ticker.font)};overflow:hidden;animation:up .5s ease both${once ? `,out .5s ease ${(secs + 0.5).toFixed(1)}s forwards` : ""}}
 .lb{background:${a};color:#fff;padding:0 2vw;display:flex;align-items:center;font-weight:800;font-size:${(2.4 * k).toFixed(2)}vw;letter-spacing:.1em;z-index:2}
 .tr{flex:1;position:relative;overflow:hidden}
-.tx{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;font-size:${(2.6 * k).toFixed(2)}vw;animation:mq ${Math.max(5, num(speed, 22, 5, 120))}s linear infinite}
+.tx{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;font-size:${(2.6 * k).toFixed(2)}vw;animation:mq ${secs}s linear ${once ? "1 forwards" : "infinite"}}
 @keyframes mq{from{transform:${move}}to{transform:${to}}}
-@keyframes up{from{transform:translateY(${from})}to{transform:none}}`,
+@keyframes up{from{transform:translateY(${from})}to{transform:none}}
+@keyframes out{from{transform:none}to{transform:translateY(${from})}}`,
     `<div class="tk">${label ? `<div class="lb">${esc(label)}</div>` : ""}<div class="tr"><div class="tx">${esc(text)}</div></div></div>`,
   );
 }

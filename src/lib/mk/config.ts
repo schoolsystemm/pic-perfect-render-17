@@ -10,6 +10,7 @@ import {
   type DskTarget,
   type GraphicsConfig,
   type MkConfig,
+  type ScrollPreset,
 } from "./types";
 
 const STORAGE_KEY = "mkvision.config.v1";
@@ -33,6 +34,26 @@ interface LooseGraphics {
   ticker?: Partial<GraphicsConfig["ticker"]>;
   clock?: Partial<GraphicsConfig["clock"]>;
   badge?: Partial<GraphicsConfig["badge"]>;
+}
+
+/** Keep only well-formed scroll presets (storage and share links are untrusted). */
+export function cleanScrolls(list: unknown[]): ScrollPreset[] {
+  const out: ScrollPreset[] = [];
+  for (const item of list) {
+    const p = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    if (typeof p["text"] !== "string" || !p["text"].trim()) continue;
+    const speed = Number(p["speed"]);
+    out.push({
+      name: (typeof p["name"] === "string" && p["name"].trim() ? p["name"] : p["text"]).slice(0, 24),
+      text: p["text"].slice(0, 400),
+      label: typeof p["label"] === "string" ? p["label"].slice(0, 24) : "",
+      speed: Number.isFinite(speed) ? Math.max(8, Math.min(120, speed)) : 22,
+      direction: p["direction"] === "right" ? "right" : "left",
+      loop: p["loop"] !== false,
+    });
+    if (out.length >= 12) break;
+  }
+  return out;
 }
 
 function mergeGraphics(raw: unknown): GraphicsConfig {
@@ -62,7 +83,11 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
       ...(r.lower ?? {}),
       presets: Array.isArray(r.lower?.presets) ? r.lower.presets : [],
     },
-    ticker: { ...D.ticker, ...(r.ticker ?? {}) },
+    ticker: {
+      ...D.ticker,
+      ...(r.ticker ?? {}),
+      scrolls: Array.isArray(r.ticker?.scrolls) ? cleanScrolls(r.ticker.scrolls) : D.ticker.scrolls,
+    },
     clock: { ...D.clock, ...(r.clock ?? {}) },
     badge: { ...D.badge, ...(r.badge ?? {}) },
   };

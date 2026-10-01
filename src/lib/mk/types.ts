@@ -58,6 +58,25 @@ export const BADGE_STYLES: { id: BadgeStyle; label: string }[] = [
   { id: "glass", label: "Glass" },
 ];
 
+/** A ready-made scrolling message: one tap loads it into the ticker and sends it on air. */
+export interface ScrollPreset {
+  name: string;
+  text: string;
+  label: string;
+  /** Seconds for one pass across the screen. */
+  speed: number;
+  direction: "left" | "right";
+  /** true = keeps repeating, false = runs once, then the bar leaves by itself. */
+  loop: boolean;
+}
+
+export const DEFAULT_SCROLLS: ScrollPreset[] = [
+  { name: "Welcome", label: "LIVE", text: "Welcome to the broadcast — stay tuned for more", speed: 24, direction: "left", loop: true },
+  { name: "Breaking", label: "BREAKING", text: "Breaking news: more details coming up shortly", speed: 20, direction: "left", loop: false },
+  { name: "Subscribe", label: "FOLLOW", text: "Like, share and subscribe so you never miss a live show", speed: 22, direction: "left", loop: false },
+  { name: "Sponsors", label: "THANKS", text: "This broadcast is brought to you by our sponsors and partners", speed: 26, direction: "left", loop: true },
+];
+
 export interface GraphicsConfig {
   logo: { image: string | null; pos: Corner; size: number; opacity: number };
   lower: {
@@ -88,6 +107,10 @@ export interface GraphicsConfig {
     bgOpacity: number;
     textColor: string;
     font: GfxFont;
+    /** true = scroll repeats forever, false = one pass, then the bar leaves. */
+    loop: boolean;
+    /** Ready-made scrolling messages (tap one to go on air). */
+    scrolls: ScrollPreset[];
   };
   clock: {
     pos: Corner;
@@ -129,6 +152,8 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     bgOpacity: 94,
     textColor: "#ffffff",
     font: "sans",
+    loop: true,
+    scrolls: DEFAULT_SCROLLS,
   },
   clock: { pos: "br", seconds: true, h24: true, size: 100, bg: "#0a0c10", bgOpacity: 88, textColor: "#ffffff", font: "mono" },
   badge: { text: "LIVE", pos: "tl", color: "#e5322d", size: 100, style: "solid", textColor: "#ffffff", font: "sans" },
