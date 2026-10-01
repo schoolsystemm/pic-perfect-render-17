@@ -126,7 +126,10 @@ export function loadConfig(): MkConfig {
         ? parsed.rundown
             .filter((i) => !!i && typeof i.text === "string" && i.text.trim() !== "")
             .slice(0, 40)
-            .map((i) => ({ text: i.text.slice(0, 120), done: i.done === true }))
+            .map((i) => ({
+              text: i.text.slice(0, 120),
+              secs: typeof i.secs === "number" && i.secs > 0 ? Math.min(Math.round(i.secs), 86_400) : 0,
+            }))
         : [],
       hiddenAudio: Array.isArray(parsed.hiddenAudio) ? parsed.hiddenAudio.filter((n): n is string => typeof n === "string") : [],
       limiter: {

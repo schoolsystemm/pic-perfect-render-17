@@ -197,13 +197,14 @@ export interface MkConfig {
   limiter: LimiterConfig;
   /** Audio inputs the operator hid from the mixer (they stay in OBS and on the mix). */
   hiddenAudio: string[];
-  /** Run-of-show checklist shown in the Tools panel. */
+  /** Pre-planned run of show (titles + planned lengths) shown in the Tools panel. */
   rundown: RundownItem[];
 }
 
 export interface RundownItem {
   text: string;
-  done: boolean;
+  /** Planned length in seconds. 0 = untimed (counts up). */
+  secs: number;
 }
 
 export interface LimiterConfig {
