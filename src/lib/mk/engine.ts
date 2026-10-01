@@ -945,6 +945,12 @@ export class SwitcherEngine {
   };
 
   /** Real video frame (JPEG data-URI) for a scene. Stable reference for hooks. */
+  /** Small snapshot for the camera wall thumbnails. */
+  getThumb = async (scene: string): Promise<string | null> => {
+    if (!this.transport) return null;
+    return this.transport.getScreenshot(scene, 320, 180).catch(() => null);
+  };
+
   getScreenshot = async (scene: string): Promise<string | null> => {
     if (!this.transport) return null;
     return this.transport.getScreenshot(scene, MONITOR_W, MONITOR_H).catch(() => null);
