@@ -220,8 +220,8 @@ function Switcher() {
             onPip={(slot) => void engine.togglePip(slot)}
             onSqueezeMerge={() => void engine.squeezeMerge()}
             onMove={(dir) => void engine.moveTake(dir)}
-            onSqueeze={() => void engine.squeeze()}
             onLayout={(kind) => void engine.toggleLayout(kind)}
+            onSqueeze={() => void engine.squeeze()}
             onFxOption={(patch) => engine.setFx(patch)}
             transitionName={state.config.transition}
             duration={state.config.transitionDuration}
