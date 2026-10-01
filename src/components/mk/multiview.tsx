@@ -9,6 +9,8 @@ interface MultiviewProps {
   program: CamIndex | null;
   preview: CamIndex | null;
   programScene: string | null;
+  /** Scene to film for the program monitor when it is not `programScene` (an effect is on air). */
+  programFeed?: string | null;
   previewScene: string | null;
   tBar: number;
   transitioning: boolean;
@@ -129,7 +131,7 @@ export function Multiview(props: MultiviewProps) {
   const now = useClock(33);
   const live = props.liveVideo && props.connected;
   const previewFrame = useFeed(props.previewScene, live, props.fps, props.getFrame);
-  const programFrame = useFeed(props.programScene, live, props.fps, props.getFrame);
+  const programFrame = useFeed(props.programFeed ?? props.programScene, live, props.fps, props.getFrame);
 
   return (
     <section className="mk-panel grid h-full min-h-0 grid-cols-2 gap-1.5 rounded-md p-1.5">

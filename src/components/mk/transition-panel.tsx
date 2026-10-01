@@ -1,4 +1,5 @@
 import { TBar } from "@/components/mk/t-bar";
+import { PIP_CORNERS, PIP_GLYPH, PIP_SIZES, SQUEEZE_DIRS, SQUEEZE_GLYPH, type FxConfig, type FxLayoutKind } from "@/lib/mk/fx";
 import { DSK_COUNT, RATE_BUTTONS, type DskTarget } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +11,11 @@ interface TransitionPanelProps {
   transitionName: string;
   duration: number;
   transitions: string[];
+  fx: { running: boolean; layout: FxLayoutKind | null };
+  fxConfig: FxConfig;
+  onSqueeze: () => void;
+  onLayout: (kind: FxLayoutKind) => void;
+  onFxOption: (patch: Partial<FxConfig>) => void;
   onTransition: (name: string) => void;
   onDuration: (ms: number) => void;
   onDsk: (index: number) => void;
@@ -27,6 +33,11 @@ export function TransitionPanel({
   transitionName,
   duration,
   transitions,
+  fx,
+  fxConfig,
+  onSqueeze,
+  onLayout,
+  onFxOption,
   onTransition,
   onDuration,
   onDsk,
@@ -111,6 +122,68 @@ export function TransitionPanel({
           {transitionName} · {duration}ms
         </span>
       </button>
+
+      {/* Picture effects: Squeeze (a take), PiP and Merge (held until tapped again) */}
+      <div className="grid gap-1" role="group" aria-label="Picture effects">
+        <div className="grid grid-cols-3 gap-1">
+          <button
+            type="button"
+            disabled={fx.running || !!fx.layout}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              onSqueeze();
+            }}
+            title="Squeeze the PGM picture away and squeeze PVW in (ends with PVW on air)"
+            className={cn("mk-button h-7 min-w-0 rounded-[3px] px-0 text-[9px]", fx.running && !fx.layout && "mk-lit-amber")}
+          >
+            SQUEEZE
+          </button>
+          {(["pip", "merge"] as const).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              disabled={fx.running || (!!fx.layout && fx.layout !== kind)}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                onLayout(kind);
+              }}
+              title={kind === "pip" ? "PVW cam as a picture-in-picture over PGM. Tap again to remove." : "Split screen: PGM left, PVW right. Tap again to remove."}
+              className={cn("mk-button h-7 min-w-0 rounded-[3px] px-0 text-[9px]", fx.layout === kind && "mk-lit-program")}
+            >
+              {kind === "pip" ? "PIP" : "MERGE"}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          <button
+            type="button"
+            title="Squeeze direction"
+            className="mk-button h-5 min-w-0 rounded-[3px] px-0 font-mono text-[9px]"
+            onClick={() => onFxOption({ squeezeDir: SQUEEZE_DIRS[(SQUEEZE_DIRS.indexOf(fxConfig.squeezeDir) + 1) % SQUEEZE_DIRS.length]! })}
+          >
+            SQZ {SQUEEZE_GLYPH[fxConfig.squeezeDir]}
+          </button>
+          <button
+            type="button"
+            title="PiP corner"
+            className="mk-button h-5 min-w-0 rounded-[3px] px-0 font-mono text-[9px]"
+            onClick={() => onFxOption({ pipCorner: PIP_CORNERS[(PIP_CORNERS.indexOf(fxConfig.pipCorner) + 1) % PIP_CORNERS.length]! })}
+          >
+            PIP {PIP_GLYPH[fxConfig.pipCorner]}
+          </button>
+          <button
+            type="button"
+            title="PiP size"
+            className="mk-button h-5 min-w-0 rounded-[3px] px-0 font-mono text-[9px]"
+            onClick={() => {
+              const i = PIP_SIZES.findIndex((v) => Math.abs(v - fxConfig.pipSize) < 0.01);
+              onFxOption({ pipSize: PIP_SIZES[(i + 1) % PIP_SIZES.length]! });
+            }}
+          >
+            PIP {Math.round(fxConfig.pipSize * 100)}%
+          </button>
+        </div>
+      </div>
 
       <div className="flex min-h-[7rem] flex-1 flex-col gap-1 fit:min-h-0">
         <span className="mk-label text-center text-[9px]">T-Bar</span>
