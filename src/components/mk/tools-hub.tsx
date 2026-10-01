@@ -1,7 +1,9 @@
 import { ArrowDown, ArrowUp, ExternalLink, Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { PrompterView } from "@/components/mk/prompter-view";
 import { RundownScreen } from "@/components/mk/rundown-screen";
+import { prompter, usePrompter } from "@/lib/mk/prompter";
 import {
   RUNDOWN_CHANNEL,
   cue,
@@ -27,10 +29,11 @@ interface ToolsHubProps {
   masterMuted: boolean;
 }
 
-type Tab = "timer" | "rundown" | "quick";
+type Tab = "timer" | "rundown" | "prompter" | "quick";
 const TABS: { id: Tab; label: string }[] = [
   { id: "timer", label: "Timer" },
   { id: "rundown", label: "Rundown" },
+  { id: "prompter", label: "Prompter" },
   { id: "quick", label: "Quick" },
 ];
 
@@ -254,6 +257,82 @@ function RundownTab({ items }: { items: RundownItem[] }) {
   );
 }
 
+// ------------------------------------------------------------------ prompter
+
+function PrompterTab() {
+  const p = usePrompter();
+  // The operator always reads the preview un-mirrored; mirror/flip only apply to the real output.
+  const view = useMemo(() => ({ ...p, mirror: false, flip: false }), [p]);
+  const btn = "mk-button h-[22px] rounded-[3px] px-2 text-[10px]";
+  return (
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-1.5">
+      {/* script */}
+      <div className="flex min-h-0 min-w-0 flex-col gap-1">
+        <textarea
+          className="mk-field min-h-0 w-full flex-1 resize-none rounded-[3px] p-1.5 text-[11px] leading-snug"
+          value={p.text}
+          placeholder={"Paste or type the script.\nA line like [CAM 2] shows in amber as a cue."}
+          spellCheck={false}
+          onChange={(e) => prompter.setText(e.target.value)}
+        />
+        <div className="flex shrink-0 items-center justify-between font-mono text-[9px] text-engrave">
+          <span>{p.text.trim() ? `${p.text.trim().split(/\s+/).length} words · ~${Math.max(1, Math.round(p.text.trim().split(/\s+/).length / 150))} min` : "empty"}</span>
+          {p.text && (
+            <button type="button" className="hover:text-foreground" onClick={() => confirm("Clear the whole script?") && prompter.setText("")}>
+              CLEAR
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* monitor + controls */}
+      <div className="flex min-h-0 min-w-0 flex-col gap-1">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-[4px] border border-white/10" title="Preview — line wrapping differs from the real output">
+          <PrompterView state={view} onEnd={(em) => prompter.ended(em)} />
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-1">
+          <button type="button" className={cn(btn, "w-14 font-bold", p.playing ? "mk-lit-amber" : "mk-lit-preview")} onClick={prompter.toggle}>
+            {p.playing ? "PAUSE" : "PLAY"}
+          </button>
+          <button type="button" className={btn} onClick={() => prompter.nudge(-3)} title="Back a few lines">
+            ▲
+          </button>
+          <button type="button" className={btn} onClick={() => prompter.nudge(3)} title="Forward a few lines">
+            ▼
+          </button>
+          <button type="button" className={btn} onClick={prompter.top}>
+            TOP
+          </button>
+          <button
+            type="button"
+            className="mk-button ml-auto flex h-[22px] items-center gap-1 rounded-[3px] px-2 text-[10px]"
+            title="Open the prompter output in its own window (drag it to the prompter screen, F = full screen)"
+            onClick={() => window.open("/prompter", "mk-prompter", "popup,width=1280,height=720")}
+          >
+            <ExternalLink className="h-3 w-3" /> OUTPUT
+          </button>
+        </div>
+        <div className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5">
+          <span className="mk-label text-[8px]">SPEED</span>
+          <input type="range" min={1} max={20} value={p.speed} onChange={(e) => prompter.setSpeed(+e.target.value)} className="h-3 w-full accent-amber" aria-label="Scroll speed" />
+          <span className="w-4 text-right font-mono text-[9px]">{p.speed}</span>
+          <span className="mk-label text-[8px]">SIZE</span>
+          <input type="range" min={4} max={18} value={p.size} onChange={(e) => prompter.setSize(+e.target.value)} className="h-3 w-full accent-amber" aria-label="Text size on output" />
+          <span className="w-4 text-right font-mono text-[9px]">{p.size}</span>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <button type="button" aria-pressed={p.mirror} className={cn(btn, "flex-1", p.mirror && "mk-lit-amber")} onClick={() => prompter.setMirror(!p.mirror)} title="Mirror the output left-right (beam-splitter glass)">
+            MIRROR
+          </button>
+          <button type="button" aria-pressed={p.flip} className={cn(btn, "flex-1", p.flip && "mk-lit-amber")} onClick={() => prompter.setFlip(!p.flip)} title="Flip the output upside down">
+            FLIP
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ quick actions
 
 function QuickTab({ audio, gfxActive, dskActive, masterMuted }: Pick<ToolsHubProps, "audio" | "gfxActive" | "dskActive" | "masterMuted">) {
@@ -305,6 +384,7 @@ export function ToolsHub({ dskActive, gfxActive, audio, rundown, masterMuted }: 
   const [tab, setTab] = useState<Tab>("timer");
   const [timer, setTimer] = useState<TimerState>({ mode: "down", running: false, base: 0, t0: 0 });
   const run = useRun();
+  const prompting = usePrompter().playing;
 
   // Feed the pop-out /rundown window (same browser): push on every change, answer "hello" on open.
   useEffect(() => {
@@ -329,7 +409,7 @@ export function ToolsHub({ dskActive, gfxActive, audio, rundown, masterMuted }: 
             className={cn("mk-button h-[18px] rounded-[3px] px-2 text-[9px]", tab === t.id && "mk-lit-preview")}
           >
             {t.label}
-            {(t.id === "timer" && timer.running) || (t.id === "rundown" && run.running) ? " ●" : ""}
+            {(t.id === "timer" && timer.running) || (t.id === "rundown" && run.running) || (t.id === "prompter" && prompting) ? " ●" : ""}
           </button>
         ))}
       </header>
@@ -337,6 +417,7 @@ export function ToolsHub({ dskActive, gfxActive, audio, rundown, masterMuted }: 
       <div className="min-h-0 min-w-0 flex-1">
         {tab === "timer" && <TimerTab t={timer} setT={setTimer} />}
         {tab === "rundown" && <RundownTab items={rundown} />}
+        {tab === "prompter" && <PrompterTab />}
         {tab === "quick" && <QuickTab audio={audio} gfxActive={gfxActive} dskActive={dskActive} masterMuted={masterMuted} />}
       </div>
     </section>
