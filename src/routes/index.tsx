@@ -158,13 +158,9 @@ function Switcher() {
               {show.status && (
                 <div className="h-40 min-w-0 fit:h-auto fit:min-w-[16rem] fit:flex-1">
                   <ToolsHub
-                    programScene={state.programScene}
-                    previewScene={state.previewScene}
                     dskActive={state.dskActive}
                     gfxActive={state.gfxActive}
                     audio={state.audio}
-                    stream={state.stream}
-                    record={state.record}
                     rundown={state.config.rundown}
                     masterMuted={state.masterMuted}
                   />
