@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AudioMixer, Master } from "@/components/mk/audio-mixer";
 import { ListenControl } from "@/components/mk/listen-control";
@@ -13,6 +13,7 @@ import { ToolsHub } from "@/components/mk/tools-hub";
 import { StatusBar } from "@/components/mk/status-bar";
 import { TransitionPanel } from "@/components/mk/transition-panel";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
+import { startPrompterHost } from "@/lib/mk/prompter";
 import { useShortcuts } from "@/lib/mk/use-shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +45,8 @@ const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam W
 function Switcher() {
   const state = useSwitcher();
   useShortcuts(state.config.shortcuts);
+  // Teleprompter host: keeps the /prompter output window in sync even when the Tools panel is hidden.
+  useEffect(() => startPrompterHost(), []);
   const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, wall: true, audio: true, status: true, graphics: true, sounds: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
   // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
