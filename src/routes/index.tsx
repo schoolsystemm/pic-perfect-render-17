@@ -9,7 +9,7 @@ import { OutputControls } from "@/components/mk/output-controls";
 import { ReconnectOverlay } from "@/components/mk/reconnect-overlay";
 import { SoundPad } from "@/components/mk/sound-pad";
 import { SourceBus } from "@/components/mk/source-bus";
-import { StatusHub } from "@/components/mk/status-hub";
+import { ToolsHub } from "@/components/mk/tools-hub";
 import { StatusBar } from "@/components/mk/status-bar";
 import { TransitionPanel } from "@/components/mk/transition-panel";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
@@ -39,7 +39,7 @@ export const Route = createFileRoute("/")({
 });
 
 type Panel = "multiview" | "wall" | "audio" | "status" | "graphics" | "sounds";
-const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Status", graphics: "Graphics", sounds: "Sounds" };
+const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Tools", graphics: "Graphics", sounds: "Sounds" };
 
 function Switcher() {
   const state = useSwitcher();
@@ -157,7 +157,7 @@ function Switcher() {
               )}
               {show.status && (
                 <div className="h-40 min-w-0 fit:h-auto fit:min-w-[16rem] fit:flex-1">
-                  <StatusHub
+                  <ToolsHub
                     programScene={state.programScene}
                     previewScene={state.previewScene}
                     dskActive={state.dskActive}
@@ -165,8 +165,8 @@ function Switcher() {
                     audio={state.audio}
                     stream={state.stream}
                     record={state.record}
-                    stats={state.stats}
-                    connected={state.status === "connected"}
+                    rundown={state.config.rundown}
+                    masterMuted={state.masterMuted}
                   />
                 </div>
               )}
