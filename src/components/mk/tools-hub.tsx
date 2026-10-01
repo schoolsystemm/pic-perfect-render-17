@@ -1,8 +1,10 @@
 import { ArrowDown, ArrowUp, ExternalLink, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { CommsPanel } from "@/components/mk/comms-panel";
 import { PrompterView } from "@/components/mk/prompter-view";
 import { RundownScreen } from "@/components/mk/rundown-screen";
+import { useComms } from "@/lib/mk/intercom";
 import { prompter, usePrompter } from "@/lib/mk/prompter";
 import {
   RUNDOWN_CHANNEL,
@@ -29,11 +31,12 @@ interface ToolsHubProps {
   masterMuted: boolean;
 }
 
-type Tab = "timer" | "rundown" | "prompter" | "quick";
+type Tab = "timer" | "rundown" | "prompter" | "comms" | "quick";
 const TABS: { id: Tab; label: string }[] = [
   { id: "timer", label: "Timer" },
   { id: "rundown", label: "Rundown" },
   { id: "prompter", label: "Prompter" },
+  { id: "comms", label: "Comms" },
   { id: "quick", label: "Quick" },
 ];
 
@@ -385,6 +388,7 @@ export function ToolsHub({ dskActive, gfxActive, audio, rundown, masterMuted }: 
   const [timer, setTimer] = useState<TimerState>({ mode: "down", running: false, base: 0, t0: 0 });
   const run = useRun();
   const prompting = usePrompter().playing;
+  const commsOn = useComms().running;
 
   // Feed the pop-out /rundown window (same browser): push on every change, answer "hello" on open.
   useEffect(() => {
@@ -409,7 +413,7 @@ export function ToolsHub({ dskActive, gfxActive, audio, rundown, masterMuted }: 
             className={cn("mk-button h-[18px] rounded-[3px] px-2 text-[9px]", tab === t.id && "mk-lit-preview")}
           >
             {t.label}
-            {(t.id === "timer" && timer.running) || (t.id === "rundown" && run.running) || (t.id === "prompter" && prompting) ? " ●" : ""}
+            {(t.id === "timer" && timer.running) || (t.id === "rundown" && run.running) || (t.id === "prompter" && prompting) || (t.id === "comms" && commsOn) ? " ●" : ""}
           </button>
         ))}
       </header>
@@ -418,6 +422,7 @@ export function ToolsHub({ dskActive, gfxActive, audio, rundown, masterMuted }: 
         {tab === "timer" && <TimerTab t={timer} setT={setTimer} />}
         {tab === "rundown" && <RundownTab items={rundown} />}
         {tab === "prompter" && <PrompterTab />}
+        {tab === "comms" && <CommsPanel />}
         {tab === "quick" && <QuickTab audio={audio} gfxActive={gfxActive} dskActive={dskActive} masterMuted={masterMuted} />}
       </div>
     </section>
