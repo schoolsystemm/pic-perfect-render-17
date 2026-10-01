@@ -1,6 +1,6 @@
 import { TBar } from "@/components/mk/t-bar";
-import { PIP_CORNERS, PIP_GLYPH, PIP_SIZES, SQUEEZE_DIRS, SQUEEZE_GLYPH, type FxConfig, type FxLayoutKind } from "@/lib/mk/fx";
-import { DSK_COUNT, RATE_BUTTONS, type DskTarget } from "@/lib/mk/types";
+import { PIP_CORNERS, PIP_GLYPH, PIP_SIZES, SQUEEZE_DIRS, SQUEEZE_GLYPH, type FxConfig, type FxLayoutKind, type SqueezeDir } from "@/lib/mk/fx";
+import { DSK_COUNT, RATE_BUTTONS, type DskTarget, type LiveState } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 interface TransitionPanelProps {
@@ -13,6 +13,12 @@ interface TransitionPanelProps {
   transitions: string[];
   fx: { running: boolean; layout: FxLayoutKind | null };
   fxConfig: FxConfig;
+  live: LiveState;
+  pipScenes: (string | null)[];
+  adScene: string | null;
+  onPip: (slot: number) => void;
+  onSqueezeMerge: () => void;
+  onMove: (dir: SqueezeDir) => void;
   onSqueeze: () => void;
   onLayout: (kind: FxLayoutKind) => void;
   onFxOption: (patch: Partial<FxConfig>) => void;
@@ -35,6 +41,12 @@ export function TransitionPanel({
   transitions,
   fx,
   fxConfig,
+  live,
+  pipScenes,
+  adScene,
+  onPip,
+  onSqueezeMerge,
+  onMove,
   onSqueeze,
   onLayout,
   onFxOption,
@@ -182,6 +194,61 @@ export function TransitionPanel({
           >
             PIP {Math.round(fxConfig.pipSize * 100)}%
           </button>
+        </div>
+      </div>
+
+      {/* Live compositor: persistent PIP 1 / PIP 2 and Squeeze Merge (real OBS scene items, kept through every take) */}
+      <div className="grid gap-1" role="group" aria-label="Live overlays">
+        <div className="grid grid-cols-3 gap-1">
+          {[0, 1].map((slot) => (
+            <button
+              key={slot}
+              type="button"
+              disabled={fx.running}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                onPip(slot);
+              }}
+              title={pipScenes[slot] ? `PIP ${slot + 1}: ${pipScenes[slot]} — stays assigned until you change it` : `PIP ${slot + 1}: assign a scene in Live FX`}
+              aria-pressed={!!live.pip[slot]}
+              className={cn("mk-button flex h-8 min-w-0 flex-col items-center justify-center gap-[2px] rounded-[3px] px-0 text-[9px]", live.pip[slot] && "mk-lit-program")}
+            >
+              PIP {slot + 1}
+              <span className="max-w-full truncate font-mono text-[6px] font-normal opacity-70">{pipScenes[slot] ?? "no scene"}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={fx.running}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              onSqueezeMerge();
+            }}
+            title="Squeeze the program and slide the advertisement in (tap again to return)"
+            aria-pressed={live.sqm}
+            className={cn("mk-button flex h-8 min-w-0 flex-col items-center justify-center gap-[2px] rounded-[3px] px-0 text-[9px]", live.sqm && "mk-lit-program", fx.running && "mk-lit-amber")}
+          >
+            SQZ MERGE
+            <span className="max-w-full truncate font-mono text-[6px] font-normal opacity-70">{adScene ?? "no ad"}</span>
+          </button>
+        </div>
+        <div className="grid grid-cols-5 items-center gap-1">
+          <span className="mk-label text-center text-[8px]">MOVE</span>
+          {(["l", "u", "d", "r"] as const).map((dir) => (
+            <button
+              key={dir}
+              type="button"
+              disabled={fx.running}
+              title={`Move transition: picture pushes ${{ l: "left", r: "right", u: "up", d: "down" }[dir]}`}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                onMove(dir);
+              }}
+              className="mk-button h-5 min-w-0 rounded-[3px] px-0 font-mono text-[10px]"
+            >
+              {SQUEEZE_GLYPH[dir]}
+            </button>
+          ))}
         </div>
       </div>
 

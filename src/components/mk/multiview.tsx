@@ -11,6 +11,8 @@ interface MultiviewProps {
   programScene: string | null;
   /** Scene to film for the program monitor when it is not `programScene` (an effect is on air). */
   programFeed?: string | null;
+  /** Scene to film for the preview monitor when a live bus carries the PIPs / advertisement. */
+  previewFeed?: string | null;
   previewScene: string | null;
   tBar: number;
   transitioning: boolean;
@@ -130,7 +132,7 @@ function Monitor({
 export function Multiview(props: MultiviewProps) {
   const now = useClock(33);
   const live = props.liveVideo && props.connected;
-  const previewFrame = useFeed(props.previewScene, live, props.fps, props.getFrame);
+  const previewFrame = useFeed(props.previewFeed ?? props.previewScene, live, props.fps, props.getFrame);
   const programFrame = useFeed(props.programFeed ?? props.programScene, live, props.fps, props.getFrame);
 
   return (
