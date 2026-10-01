@@ -6,7 +6,7 @@ import { dbToPos, FADER_TICKS, fmtDb, powerSum } from "@/lib/mk/audio-math";
 import { LIMITER_MAX, LIMITER_MIN, type AudioChannel, type LimiterConfig } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
-interface AudioMixerProps {
+export interface AudioMixerProps {
   channels: AudioChannel[];
   levels: Record<string, number>;
   afv: boolean;
@@ -118,7 +118,7 @@ function Strip({
 }
 
 /** The final output: everything routed to MN, with the limiter. */
-function Master(props: AudioMixerProps) {
+export function Master(props: AudioMixerProps & { className?: string }) {
   const { channels, levels, limiter, masterMuted } = props;
   const onMain = channels.filter((c) => c.stream);
   const live = onMain.filter((c) => !c.muted);
@@ -132,7 +132,7 @@ function Master(props: AudioMixerProps) {
   const limiting = limiter.on && gr > 0.1;
 
   return (
-    <div className="flex w-[8.6rem] shrink-0 flex-col gap-1 rounded-[4px] border border-program/50 bg-program-dim/25 px-1.5 py-1 shadow-[inset_0_0_14px_oklch(0.4_0.15_26/25%)]">
+    <div className={cn("flex h-full min-h-0 w-full flex-col gap-1 rounded-md border border-program/50 bg-program-dim/25 p-1.5 shadow-[inset_0_0_14px_oklch(0.4_0.15_26/25%)]", props.className)}>
       <div className="flex items-baseline justify-between leading-none">
         <span className="text-[10px] font-bold tracking-[0.2em] text-program">MASTER</span>
         <span className="font-mono text-[8px] text-engrave">{live.length} in</span>
@@ -207,7 +207,7 @@ export function AudioMixer(props: AudioMixerProps) {
     <section className="mk-panel flex h-full min-h-0 min-w-0 flex-col rounded-md p-1.5">
       <header className="mb-1 flex items-center gap-2">
         <span className="mk-label text-foreground">Audio</span>
-        <span className="mk-label hidden truncate text-[8px] xl:block">MN = final out · PRE = pre-listen · PC = OBS PC headphones</span>
+        <span className="mk-label hidden truncate text-[8px] 2xl:block">MN = final out · PRE = pre-listen · PC = OBS PC headphones</span>
         <button
           type="button"
           onClick={() => onAfv(!afv)}
@@ -220,13 +220,10 @@ export function AudioMixer(props: AudioMixerProps) {
       {channels.length === 0 ? (
         <p className="mk-label py-4 text-center text-[10px]">No audio inputs</p>
       ) : (
-        <div className="flex min-h-0 flex-1 items-stretch gap-1.5">
-          <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto overflow-y-hidden">
-            {channels.map((c) => (
-              <Strip key={c.name} channel={c} level={levels[c.name] ?? -100} cam={camOf(c.name)} props={props} />
-            ))}
-          </div>
-          <Master {...props} />
+        <div className="flex min-h-0 min-w-0 flex-1 items-stretch gap-1 overflow-x-auto overflow-y-hidden">
+          {channels.map((c) => (
+            <Strip key={c.name} channel={c} level={levels[c.name] ?? -100} cam={camOf(c.name)} props={props} />
+          ))}
         </div>
       )}
     </section>
