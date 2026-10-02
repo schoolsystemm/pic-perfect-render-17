@@ -11,6 +11,7 @@ import {
   PIP_SCENES,
   ease,
   isLiveBus,
+  isStage,
   lerpRect,
   mergeFrame,
   moveFrame,
@@ -316,7 +317,7 @@ export class SwitcherEngine {
         break;
       }
       case "scenes":
-        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !(PIP_SCENES as string[]).includes(n)) });
+        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !isStage(n) && !(PIP_SCENES as string[]).includes(n)) });
         break;
       case "transitions":
         this.set({ transitions: event.transitions });
