@@ -2,7 +2,7 @@
 // Kept free of UI and transport concerns so the same contracts can later back a
 // physical MK VISION PANEL hardware interface.
 
-import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type AdPreset, type DskPlace, type FxConfig, type FxLayoutKind, type PipSlot } from "./fx";
+import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type AdPreset, type DskPlace, type FxConfig, type FxLayoutKind, type PipSlot, type PlacePos } from "./fx";
 
 export const CAM_COUNT = 8;
 export const DSK_COUNT = 2;
@@ -82,8 +82,10 @@ export const DEFAULT_SCROLLS: ScrollPreset[] = [
 ];
 
 export interface GraphicsConfig {
-  logo: { image: string | null; pos: Corner; size: number; opacity: number };
+  logo: { image: string | null; pos: Corner; /** Hand-placed spot (0..1 across the free space). Wins over `pos` when set. */ at: PlacePos | null; size: number; opacity: number };
   lower: {
+    /** Hand-placed spot (0..1 across the free space). null = the default lower-third spot. */
+    at: PlacePos | null;
     name: string;
     title: string;
     accent: string;
@@ -96,6 +98,8 @@ export interface GraphicsConfig {
     font: GfxFont;
   };
   ticker: {
+    /** Hand-placed spot; only the vertical (y) part is used — the bar always spans the width. null = use `pos`. */
+    at: PlacePos | null;
     text: string;
     label: string;
     speed: number;
@@ -118,6 +122,8 @@ export interface GraphicsConfig {
   };
   clock: {
     pos: Corner;
+    /** Hand-placed spot (0..1 across the free space). Wins over `pos` when set. */
+    at: PlacePos | null;
     seconds: boolean;
     h24: boolean;
     size: number;
@@ -126,12 +132,13 @@ export interface GraphicsConfig {
     textColor: string;
     font: GfxFont;
   };
-  badge: { text: string; pos: Corner; color: string; size: number; style: BadgeStyle; textColor: string; font: GfxFont };
+  badge: { text: string; pos: Corner; at: PlacePos | null; color: string; size: number; style: BadgeStyle; textColor: string; font: GfxFont };
 }
 
 export const DEFAULT_GRAPHICS: GraphicsConfig = {
-  logo: { image: null, pos: "tr", size: 12, opacity: 100 },
+  logo: { image: null, pos: "tr", at: null, size: 12, opacity: 100 },
   lower: {
+    at: null,
     name: "Guest Name",
     title: "Title / Role",
     accent: "#f5a623",
@@ -144,6 +151,7 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     font: "sans",
   },
   ticker: {
+    at: null,
     text: "Welcome to the broadcast — stay tuned for more",
     label: "LIVE",
     speed: 22,
@@ -159,8 +167,8 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     loop: true,
     scrolls: DEFAULT_SCROLLS,
   },
-  clock: { pos: "br", seconds: true, h24: true, size: 100, bg: "#0a0c10", bgOpacity: 88, textColor: "#ffffff", font: "mono" },
-  badge: { text: "LIVE", pos: "tl", color: "#e5322d", size: 100, style: "solid", textColor: "#ffffff", font: "sans" },
+  clock: { pos: "br", at: null, seconds: true, h24: true, size: 100, bg: "#0a0c10", bgOpacity: 88, textColor: "#ffffff", font: "mono" },
+  badge: { text: "LIVE", pos: "tl", at: null, color: "#e5322d", size: 100, style: "solid", textColor: "#ffffff", font: "sans" },
 };
 
 export const IDLE_GFX: Record<GfxId, boolean> = {

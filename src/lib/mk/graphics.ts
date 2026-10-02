@@ -1,6 +1,7 @@
 // Built-in on-air graphics. Each layer is an OBS browser source whose HTML is
 // embedded in a data: URL — nothing to host or upload. Layers live in the
 // "MK Graphics" scene and are switched on/off independently of the DSKs.
+import type { PlacePos } from "./fx";
 import type { Corner, GfxFont, GfxId, GraphicsConfig } from "./types";
 
 export const GFX_SCENE = "MK Graphics";
@@ -67,6 +68,24 @@ const ORIGIN: Record<Corner, string> = {
   br: "bottom right",
 };
 
+/** A hand-placed spot, cleaned (0..1 each) or null. */
+const spot = (v: unknown): PlacePos | null => {
+  if (!v || typeof v !== "object") return null;
+  const { x, y } = v as Record<string, unknown>;
+  if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+};
+
+/**
+ * CSS for an item placed by hand. 0 = its edge touches that side of the picture, 1 = the opposite edge,
+ * whatever the item's own size (so it never leaves the screen). k is the size scale.
+ */
+const placeCss = (at: PlacePos, k = 1) => {
+  const x = (at.x * 100).toFixed(3);
+  const y = (at.y * 100).toFixed(3);
+  return `position:absolute;left:${x}%;top:${y}%;transform-origin:0 0;transform:scale(${k}) translate(-${x}%,-${y}%)`;
+};
+
 const scale = (n: number) => Math.max(0.3, Math.min(3, (Number(n) || 100) / 100));
 
 const page = (css: string, body: string, script = "") =>
@@ -76,9 +95,11 @@ const page = (css: string, body: string, script = "") =>
 
 function logo(g: GraphicsConfig) {
   const { pos, size, opacity } = g.logo;
+  const at = spot(g.logo.at);
   const image = safeImage(g.logo.image);
+  const where = at ? placeCss(at) : `position:absolute;${POS[pos]}`;
   const img = image
-    ? `<img src="${image}" style="position:absolute;${POS[pos]};width:${num(size, 12, 3, 60)}vw;opacity:${num(opacity, 100, 5, 100) / 100};animation:in .5s ease both">`
+    ? `<img src="${image}" style="${where};width:${num(size, 12, 3, 60)}vw;opacity:${num(opacity, 100, 5, 100) / 100};animation:in .5s ease both">`
     : "";
   return page("@keyframes in{from{opacity:0}to{opacity:1}}", img);
 }
@@ -89,6 +110,10 @@ function lower(g: GraphicsConfig) {
   const txt = color(L.text, "#ffffff");
   const bgc = rgba(L.bg, L.bgOpacity);
   const ff = font(L.font);
+  const at = spot(L.at);
+  const sc = at
+    ? placeCss(at, scale(L.size))
+    : `position:absolute;left:6vw;bottom:13vh;transform:scale(${scale(L.size)});transform-origin:bottom left`;
   const glass = L.style === "glass";
   const boxed = L.style === "box";
   const under = L.style === "underline";
@@ -101,7 +126,7 @@ function lower(g: GraphicsConfig) {
         : `background:${bgc}`;
   const bar = under || boxed ? "" : `<div class="bar"></div>`;
   return page(
-    `.sc{position:absolute;left:6vw;bottom:13vh;transform:scale(${scale(L.size)});transform-origin:bottom left}
+    `.sc{${sc}}
 .lt{display:flex;animation:in .6s cubic-bezier(.2,.8,.2,1) both;font-family:${ff}}
 .bar{width:.9vw;background:${a}${glass ? ";box-shadow:0 0 1.4vw " + a : ""}}
 .box{${box};padding:1.2vw 2.6vw 1.2vw 1.6vw;color:${txt}}
@@ -118,8 +143,12 @@ function ticker(g: GraphicsConfig) {
   // One pass, then the bar slides away on its own (the engine also takes it off air).
   const once = g.ticker.loop === false;
   const k = scale(size);
-  const edge = pos === "top" ? "top:0" : "bottom:0";
-  const from = pos === "top" ? "-100%" : "100%";
+  const at = spot(g.ticker.at);
+  const barH = 7 * k; // vh
+  // Hand-placed: y 0 = top edge, 1 = bottom edge. The bar slides in from whichever side it is nearer.
+  const edge = at ? `top:${(at.y * Math.max(0, 100 - barH)).toFixed(3)}vh` : pos === "top" ? "top:0" : "bottom:0";
+  const fromTop = at ? at.y < 0.5 : pos === "top";
+  const from = fromTop ? "-100%" : "100%";
   const move = direction === "right" ? "translateX(-100%)" : "translateX(100vw)";
   const to = direction === "right" ? "translateX(100vw)" : "translateX(-100%)";
   const a = color(accent, "#e5322d");
@@ -144,8 +173,12 @@ function ticker(g: GraphicsConfig) {
 
 function clock(g: GraphicsConfig) {
   const { pos, seconds, h24 } = g.clock;
+  const at = spot(g.clock.at);
+  const where = at
+    ? placeCss(at, scale(g.clock.size))
+    : `position:absolute;${POS[pos]};transform:scale(${scale(g.clock.size)});transform-origin:${ORIGIN[pos]}`;
   return page(
-    `.c{position:absolute;${POS[pos]};transform:scale(${scale(g.clock.size)});transform-origin:${ORIGIN[pos]};background:${rgba(g.clock.bg, g.clock.bgOpacity)};color:${color(g.clock.textColor, "#ffffff")};font-family:${font(g.clock.font)};font-size:2.8vw;font-weight:700;padding:.6vw 1.6vw;border-radius:.6vw;animation:in .5s ease both}
+    `.c{${where};background:${rgba(g.clock.bg, g.clock.bgOpacity)};color:${color(g.clock.textColor, "#ffffff")};font-family:${font(g.clock.font)};font-size:2.8vw;font-weight:700;padding:.6vw 1.6vw;border-radius:.6vw;animation:in .5s ease both}
 @keyframes in{from{opacity:0}to{opacity:1}}`,
     `<div class="c" id="c">--:--</div>`,
     `var H24=${h24 ? "true" : "false"},SEC=${seconds ? "true" : "false"};function p(n){return String(n).padStart(2,'0')}
@@ -157,6 +190,10 @@ t();setInterval(t,500);`,
 
 function badge(g: GraphicsConfig) {
   const { text, pos, color: c, style } = g.badge;
+  const at = spot(g.badge.at);
+  const where = at
+    ? placeCss(at, scale(g.badge.size))
+    : `position:absolute;${POS[pos]};transform:scale(${scale(g.badge.size)});transform-origin:${ORIGIN[pos]}`;
   const col = color(c, "#e5322d");
   const txt = color(g.badge.textColor, "#ffffff");
   const look =
@@ -166,7 +203,7 @@ function badge(g: GraphicsConfig) {
         ? `background:${rgba(col, 45)};backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.35);color:${txt}`
         : `background:${col};color:${txt}`;
   return page(
-    `.b{position:absolute;${POS[pos]};transform:scale(${scale(g.badge.size)});transform-origin:${ORIGIN[pos]};display:flex;align-items:center;gap:.8vw;${look};font-family:${font(g.badge.font)};font-weight:800;font-size:2.4vw;letter-spacing:.1em;padding:.5vw 1.6vw;border-radius:.6vw;animation:in .4s ease both}
+    `.b{${where};display:flex;align-items:center;gap:.8vw;${look};font-family:${font(g.badge.font)};font-weight:800;font-size:2.4vw;letter-spacing:.1em;padding:.5vw 1.6vw;border-radius:.6vw;animation:in .4s ease both}
 .d{width:1.2vw;height:1.2vw;border-radius:50%;background:${style === "outline" ? col : txt};animation:p 1.2s ease-in-out infinite}
 @keyframes p{50%{opacity:.25}}@keyframes in{from{opacity:0}to{opacity:1}}`,
     `<div class="b"><span class="d"></span>${esc(text)}</div>`,

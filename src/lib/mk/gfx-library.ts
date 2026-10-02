@@ -41,6 +41,13 @@ interface SharePack {
 // field from the defaults so only known keys with valid values get through.
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/;
+/** A hand-placed spot: both parts 0..1, otherwise null (= use the default / corner). */
+const cleanAt = (v: unknown): { x: number; y: number } | null => {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o["x"] !== "number" || typeof o["y"] !== "number") return null;
+  return { x: num(o["x"], 0.5, 0, 1), y: num(o["y"], 0.5, 0, 1) };
+};
 const isCorner = (v: unknown) => v === "tl" || v === "tr" || v === "bl" || v === "br";
 const oneOf = <T extends string>(v: unknown, list: readonly { id: T }[], fallback: T): T =>
   list.some((l) => l.id === v) ? (v as T) : fallback;
@@ -61,6 +68,7 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
       return {
         image: safeImage(r["image"]),
         pos: isCorner(r["pos"]) ? r["pos"] : d.pos,
+        at: cleanAt(r["at"]),
         size: num(r["size"], d.size, 3, 60),
         opacity: num(r["opacity"], d.opacity, 5, 100),
       } as LayerData<K>;
@@ -77,6 +85,7 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
             .filter((p) => p.name)
         : [];
       return {
+        at: cleanAt(r["at"]),
         name: str(r["name"], d.name, 80),
         title: str(r["title"], d.title, 80),
         accent: hex(r["accent"], d.accent),
@@ -92,6 +101,7 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
     case "ticker": {
       const d = D.ticker;
       return {
+        at: cleanAt(r["at"]),
         text: str(r["text"], d.text, 400),
         label: str(r["label"], d.label, 24),
         speed: num(r["speed"], d.speed, 8, 120),
@@ -112,6 +122,7 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
       const d = D.clock;
       return {
         pos: isCorner(r["pos"]) ? r["pos"] : d.pos,
+        at: cleanAt(r["at"]),
         seconds: bool(r["seconds"], d.seconds),
         h24: bool(r["h24"], d.h24),
         size: num(r["size"], d.size, 30, 300),
@@ -126,6 +137,7 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
       return {
         text: str(r["text"], d.text, 24),
         pos: isCorner(r["pos"]) ? r["pos"] : d.pos,
+        at: cleanAt(r["at"]),
         color: hex(r["color"], d.color),
         size: num(r["size"], d.size, 30, 300),
         style: oneOf(r["style"], BADGE_STYLES, d.style),

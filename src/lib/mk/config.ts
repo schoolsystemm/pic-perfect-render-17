@@ -84,6 +84,7 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
       logo: {
         image: typeof r.logo === "string" ? r.logo : null,
         pos: r.logoPos ?? D.logo.pos,
+        at: null,
         size: r.logoSize ?? D.logo.size,
         opacity: D.logo.opacity,
       },
