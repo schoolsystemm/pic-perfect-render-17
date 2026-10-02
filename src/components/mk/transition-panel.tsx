@@ -1,5 +1,8 @@
+import { MergeEditor } from "@/components/mk/merge-editor";
+import { SqueezeMergeEditor } from "@/components/mk/squeeze-merge-editor";
 import { TBar } from "@/components/mk/t-bar";
-import { SQUEEZE_DIRS, SQUEEZE_GLYPH, type FxConfig, type FxLayoutKind, type SqueezeDir } from "@/lib/mk/fx";
+import { SQUEEZE_DIRS, SQUEEZE_GLYPH, type AdPreset, type FxConfig, type FxLayoutKind, type SqueezeDir } from "@/lib/mk/fx";
+import { mergeLayoutById, type MergePreset } from "@/lib/mk/merge";
 import { DSK_COUNT, RATE_BUTTONS, type DskTarget, type LiveState } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +21,12 @@ interface TransitionPanelProps {
   adScene: string | null;
   /** Name of the selected Squeeze Merge preset. */
   adName?: string | undefined;
+  /** All saved Squeeze Merge presets + the one in use (edited / saved from the SQZ MERGE SETUP button). */
+  adPresets: AdPreset[];
+  adActive: number;
+  /** Split-screen Merge looks (2..6 panes + borders) and the one the MERGE button plays. */
+  mergePresets: MergePreset[];
+  mergeActive: number;
   onPip: (slot: number) => void;
   onSqueezeMerge: () => void;
   onMove: (dir: SqueezeDir) => void;
@@ -47,6 +56,10 @@ export function TransitionPanel({
   pipScenes,
   adScene,
   adName,
+  adPresets,
+  adActive,
+  mergePresets,
+  mergeActive,
   onPip,
   onSqueezeMerge,
   onMove,
@@ -142,7 +155,7 @@ export function TransitionPanel({
       <div className="grid grid-cols-3 gap-1" role="group" aria-label="Picture effects">
         <button
           type="button"
-          disabled={fx.running || !!fx.layout}
+          disabled={fx.running || !!fx.layout || live.merge}
           onPointerDown={(event) => {
             event.preventDefault();
             onSqueeze();
@@ -155,15 +168,18 @@ export function TransitionPanel({
         <button
           type="button"
           disabled={fx.running}
-          aria-pressed={fx.layout === "merge"}
+          aria-pressed={live.merge}
           onPointerDown={(event) => {
             event.preventDefault();
             onLayout("merge");
           }}
-          title="Split screen: PGM left, PVW right. Tap again to remove."
-          className={cn("mk-button h-7 min-w-0 rounded-[3px] px-0 text-[9px]", fx.layout === "merge" && "mk-lit-program")}
+          title="Split screen with borders (2 to 6 panes). Tap again to remove. PIP, DSK and Squeeze Merge keep working on top."
+          className={cn("mk-button flex h-7 min-w-0 flex-col items-center justify-center gap-[2px] rounded-[3px] px-0 text-[9px]", live.merge && "mk-lit-program")}
         >
           MERGE
+          <span className="max-w-full truncate font-mono text-[6px] font-normal opacity-70">
+            {mergePresets[mergeActive]?.name ?? "split"} · {mergeLayoutById(mergePresets[mergeActive]?.merge.layout ?? "2c").panes}
+          </span>
         </button>
         <button
           type="button"
@@ -210,6 +226,8 @@ export function TransitionPanel({
             <span className="max-w-full truncate font-mono text-[6px] font-normal opacity-70">{adName ?? adScene ?? "no ad"}</span>
           </button>
         </div>
+        <MergeEditor presets={mergePresets} active={mergeActive} merging={live.merge} busy={fx.running} />
+        <SqueezeMergeEditor presets={adPresets} adActive={adActive} sqmOn={live.sqm} busy={fx.running} />
         <div className="grid grid-cols-5 items-center gap-1">
           <span className="mk-label text-center text-[8px]">MOVE</span>
           {(["l", "u", "d", "r"] as const).map((dir) => (
