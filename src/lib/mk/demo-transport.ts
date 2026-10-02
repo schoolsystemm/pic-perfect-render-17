@@ -240,6 +240,16 @@ export class DemoTransport implements Transport {
     this.bus.emit({ type: "dsk", index, on });
   }
 
+  async getCanvas() {
+    return { width: 1920, height: 1080 };
+  }
+
+  async placeDSK() {}
+
+  async readItemTransform(): Promise<Record<string, unknown> | null> {
+    return { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0, alignment: 5, boundsType: "OBS_BOUNDS_NONE", boundsWidth: 0, boundsHeight: 0 };
+  }
+
   async readDSK(): Promise<boolean | null> {
     return null;
   }

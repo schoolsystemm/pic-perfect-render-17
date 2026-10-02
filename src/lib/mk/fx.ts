@@ -20,6 +20,8 @@ export interface FxRect {
   cr: number;
   ct: number;
   cb: number;
+  /** A complete OBS scene-item transform (used for DSK items that keep their own look). Wins over every other field. */
+  raw?: Record<string, unknown>;
 }
 
 /** null = layer hidden. */
@@ -34,6 +36,52 @@ export const PIP_GLYPH: Record<Corner, string> = { tl: "◤", tr: "◥", br: "�
 export const PIP_SIZES = [0.2, 0.3, 0.4];
 
 export type FxLayoutKind = "pip" | "merge";
+
+const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
+
+/** A spot picked by hand: 0..1 across the free space (0,0 = top-left, 1,1 = bottom-right). */
+export interface PlacePos {
+  x: number;
+  y: number;
+}
+
+/** DSK placement picked by hand: spot + size (share of the picture width). */
+export interface DskPlace extends PlacePos {
+  size: number;
+}
+export const DSK_PLACE_SIZES = [0.1, 0.15, 0.2, 0.3, 0.4, 0.6, 1];
+
+/** Bounding box for a hand-placed DSK: the item is fitted inside it by OBS, so any source keeps its shape. */
+export function dskPlaceRect(place: DskPlace, W: number, H: number): FxRect {
+  const bw = Math.max(2, W * place.size);
+  const bh = Math.max(2, H * place.size);
+  return {
+    x: clamp01(place.x) * (W - bw),
+    y: clamp01(place.y) * (H - bh),
+    sx: 1,
+    sy: 1,
+    cl: 0,
+    cr: 0,
+    ct: 0,
+    cb: 0,
+    bw,
+    bh,
+  };
+}
+
+/** Put an OBS item transform inside the squeezed program area (position, scale and bounds follow the region). */
+export function rawIn(base: Record<string, unknown>, region: FxRect): Record<string, unknown> {
+  const n = (k: string, d = 0) => (typeof base[k] === "number" ? (base[k] as number) : d);
+  return {
+    ...base,
+    positionX: region.x + n("positionX") * region.sx,
+    positionY: region.y + n("positionY") * region.sy,
+    scaleX: n("scaleX", 1) * region.sx,
+    scaleY: n("scaleY", 1) * region.sy,
+    boundsWidth: n("boundsWidth") * region.sx,
+    boundsHeight: n("boundsHeight") * region.sy,
+  };
+}
 
 export interface FxConfig {
   pipCorner: Corner;
@@ -64,13 +112,24 @@ export function squeezeFrame(dir: SqueezeDir, t: number, W: number, H: number): 
 }
 
 /** Picture-in-picture: B grows out of its corner slot over a full-screen A. t: 0 = no inset, 1 = inset in place. */
-export function pipFrame(corner: Corner, size: number, t: number, W: number, H: number): FxPair {
+export function pipFrame(
+  corner: Corner,
+  size: number,
+  t: number,
+  W: number,
+  H: number,
+  pos?: PlacePos | null,
+): FxPair {
   const w = W * size;
   const h = H * size;
   const m = Math.min(W, H) * 0.04;
-  const x = corner.endsWith("r") ? W - m - w : m;
-  const y = corner.startsWith("b") ? H - m - h : m;
-  return { a: rect(0, 0, W, H, W, H), b: rect(x + (w * (1 - t)) / 2, y + (h * (1 - t)) / 2, w * t, h * t, W, H) };
+  // A physically picked spot (pos: 0..1 across the free space) wins over the corner.
+  const x = pos ? m + clamp01(pos.x) * (W - 2 * m - w) : corner.endsWith("r") ? W - m - w : m;
+  const y = pos ? m + clamp01(pos.y) * (H - 2 * m - h) : corner.startsWith("b") ? H - m - h : m;
+  return {
+    a: rect(0, 0, W, H, W, H),
+    b: rect(x + (w * (1 - t)) / 2, y + (h * (1 - t)) / 2, w * t, h * t, W, H),
+  };
 }
 
 /**
@@ -108,10 +167,13 @@ export const isLiveBus = (name: string | null | undefined) => !!name && LIVE_BUS
 // ---------------------------------------------------------------------------------------------
 const STAGE_SUFFIX = " STAGE";
 /** The scene whose items MK really moves for a shell scene ("MK LIVE A" -> "MK LIVE A STAGE"); other scenes map to themselves. */
-export const stageOf = (scene: string) => (scene === FX_SCENE || LIVE_BUSES.includes(scene) ? `${scene}${STAGE_SUFFIX}` : scene);
+export const stageOf = (scene: string) =>
+  scene === FX_SCENE || LIVE_BUSES.includes(scene) ? `${scene}${STAGE_SUFFIX}` : scene;
 /** Inverse of stageOf: the shell scene that is on air for a stage scene. */
 export const shellOf = (scene: string) =>
-  scene.endsWith(STAGE_SUFFIX) && stageOf(scene.slice(0, -STAGE_SUFFIX.length)) === scene ? scene.slice(0, -STAGE_SUFFIX.length) : scene;
+  scene.endsWith(STAGE_SUFFIX) && stageOf(scene.slice(0, -STAGE_SUFFIX.length)) === scene
+    ? scene.slice(0, -STAGE_SUFFIX.length)
+    : scene;
 export const isStage = (name: string | null | undefined) => !!name && shellOf(name) !== name;
 
 export interface PipSlot {
@@ -119,6 +181,8 @@ export interface PipSlot {
   scene: string | null;
   corner: Corner;
   size: number;
+  /** Spot picked by hand in Settings (null = use `corner`). */
+  pos?: PlacePos | null;
 }
 
 export type AdLayout = "r" | "l" | "b" | "t";
@@ -133,7 +197,17 @@ export const AD_SIZES = [0.2, 0.25, 0.3, 0.35];
 /** Where the program picture sits in the Squeeze Merge "frame" look (the vMix look): 3 x 3 grid. */
 export type Anchor = "tl" | "t" | "tr" | "l" | "c" | "r" | "bl" | "b" | "br";
 export const ANCHORS: Anchor[] = ["tl", "t", "tr", "l", "c", "r", "bl", "b", "br"];
-export const ANCHOR_GLYPH: Record<Anchor, string> = { tl: "◤", t: "▲", tr: "◥", l: "◀", c: "●", r: "▶", bl: "◣", b: "▼", br: "◢" };
+export const ANCHOR_GLYPH: Record<Anchor, string> = {
+  tl: "◤",
+  t: "▲",
+  tr: "◥",
+  l: "◀",
+  c: "●",
+  r: "▶",
+  bl: "◣",
+  b: "▼",
+  br: "◢",
+};
 
 /** How the picture gets there. */
 export type AdStyle = "smooth" | "pop" | "linear" | "cut";
@@ -175,7 +249,15 @@ export const DEFAULT_PIPS: PipSlot[] = [
   { scene: null, corner: "br", size: 0.3 },
   { scene: null, corner: "bl", size: 0.3 },
 ];
-export const DEFAULT_AD: AdConfig = { scene: null, look: "frame", anchor: "tr", layout: "r", size: 0.25, fit: "fit", style: "smooth" };
+export const DEFAULT_AD: AdConfig = {
+  scene: null,
+  look: "frame",
+  anchor: "tr",
+  layout: "r",
+  size: 0.25,
+  fit: "fit",
+  style: "smooth",
+};
 
 export const FULL_RECT: FxRect = { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0 };
 
@@ -202,13 +284,26 @@ export function lerpRect(a: FxRect, b: FxRect, t: number): FxRect {
 }
 
 /** Final PiP rectangle for a corner + size (the same geometry the old PIP button uses). */
-export function pipRect(corner: Corner, size: number, W: number, H: number): FxRect {
-  return pipFrame(corner, size, 1, W, H).b as FxRect;
+export function pipRect(
+  corner: Corner,
+  size: number,
+  W: number,
+  H: number,
+  pos?: PlacePos | null,
+): FxRect {
+  return pipFrame(corner, size, 1, W, H, pos).b as FxRect;
 }
 
 /** PiP grows out of its slot: t 0 = nothing, 1 = in place. null while invisible. */
-export function pipAt(corner: Corner, size: number, t: number, W: number, H: number): FxRect | null {
-  return pipFrame(corner, size, t, W, H).b;
+export function pipAt(
+  corner: Corner,
+  size: number,
+  t: number,
+  W: number,
+  H: number,
+  pos?: PlacePos | null,
+): FxRect | null {
+  return pipFrame(corner, size, t, W, H, pos).b;
 }
 
 /** Move (push) transition: A slides out, B slides in behind it. No scaling. t: 0 = all A, 1 = all B. */
@@ -227,12 +322,37 @@ export function moveFrame(dir: SqueezeDir, t: number, W: number, H: number): FxP
 }
 
 /** Where the program picture and the advertisement sit once Squeeze Merge is fully in. */
-export function sqmTargets(layout: AdLayout, size: number, W: number, H: number): { main: FxRect; ad: FxRect } {
+export function sqmTargets(
+  layout: AdLayout,
+  size: number,
+  W: number,
+  H: number,
+): { main: FxRect; ad: FxRect } {
   const s = 1 - size;
   const mw = W * s;
   const mh = H * s;
-  const main = (x: number, y: number): FxRect => ({ x, y, sx: s, sy: s, cl: 0, cr: 0, ct: 0, cb: 0 });
-  const ad = (x: number, y: number, bw: number, bh: number): FxRect => ({ x, y, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0, bw, bh });
+  const main = (x: number, y: number): FxRect => ({
+    x,
+    y,
+    sx: s,
+    sy: s,
+    cl: 0,
+    cr: 0,
+    ct: 0,
+    cb: 0,
+  });
+  const ad = (x: number, y: number, bw: number, bh: number): FxRect => ({
+    x,
+    y,
+    sx: 1,
+    sy: 1,
+    cl: 0,
+    cr: 0,
+    ct: 0,
+    cb: 0,
+    bw,
+    bh,
+  });
   switch (layout) {
     case "r":
       return { main: main(0, (H - mh) / 2), ad: ad(mw, 0, W - mw, H) };
@@ -246,7 +366,12 @@ export function sqmTargets(layout: AdLayout, size: number, W: number, H: number)
 }
 
 /** Squeeze Merge at rest: program full screen, advertisement parked just outside the picture. */
-export function sqmRest(layout: AdLayout, size: number, W: number, H: number): { main: FxRect; ad: FxRect } {
+export function sqmRest(
+  layout: AdLayout,
+  size: number,
+  W: number,
+  H: number,
+): { main: FxRect; ad: FxRect } {
   const end = sqmTargets(layout, size, W, H).ad;
   const ad = { ...end };
   if (layout === "r") ad.x = W;
@@ -258,11 +383,34 @@ export function sqmRest(layout: AdLayout, size: number, W: number, H: number): {
 
 /** Put a full-canvas rect inside `region` (the squeezed program area). */
 export function placeIn(r: FxRect, region: FxRect): FxRect {
-  return { ...r, x: region.x + r.x * region.sx, y: region.y + r.y * region.sy, sx: r.sx * region.sx, sy: r.sy * region.sy };
+  const out: FxRect = {
+    ...r,
+    x: region.x + r.x * region.sx,
+    y: region.y + r.y * region.sy,
+    sx: r.sx * region.sx,
+    sy: r.sy * region.sy,
+  };
+  if (r.bw !== undefined && r.bh !== undefined) {
+    out.bw = r.bw * region.sx;
+    out.bh = r.bh * region.sy;
+  }
+  if (r.raw) out.raw = rawIn(r.raw, region);
+  return out;
+}
+
+/** A named, ready-made Squeeze Merge (advertisement + look + position + size + style), picked from a drop-down on the live screen. */
+export interface AdPreset {
+  name: string;
+  ad: AdConfig;
 }
 
 /** Frame look, fully in: the program picture (uniformly scaled, so never squashed) sits at `anchor`; the ad is the full canvas behind it. */
-export function frameTargets(anchor: Anchor, size: number, W: number, H: number): { main: FxRect; ad: FxRect } {
+export function frameTargets(
+  anchor: Anchor,
+  size: number,
+  W: number,
+  H: number,
+): { main: FxRect; ad: FxRect } {
   const s = 1 - size;
   const mw = W * s;
   const mh = H * s;
@@ -275,5 +423,8 @@ export function frameTargets(anchor: Anchor, size: number, W: number, H: number)
 
 /** Frame look at rest: program full screen; the ad is already full-canvas behind it (the picture hides it). */
 export function frameRest(W: number, H: number): { main: FxRect; ad: FxRect } {
-  return { main: { ...FULL_RECT }, ad: { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0, bw: W, bh: H } };
+  return {
+    main: { ...FULL_RECT },
+    ad: { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0, bw: W, bh: H },
+  };
 }

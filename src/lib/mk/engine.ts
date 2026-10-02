@@ -10,6 +10,7 @@ import {
   LIVE_BUSES,
   PIP_SCENES,
   adEase,
+  dskPlaceRect,
   ease,
   isLiveBus,
   isStage,
@@ -26,7 +27,9 @@ import {
   sqmTargets,
   squeezeFrame,
   type AdConfig,
+  type AdPreset,
   type AdStyle,
+  type DskPlace,
   type FxConfig,
   type FxLayoutKind,
   type FxPair,
@@ -120,6 +123,11 @@ export class SwitcherEngine {
   /** While OBS program is an MK LIVE bus: which cam scene each bus shows, and the canvas size. */
   private live: { mains: Record<string, string>; w: number; h: number } | null = null;
   private recovering = false;
+  /**
+   * DSKs that currently ride in the live bus (so Squeeze Merge squeezes them together with the picture). While one does,
+   * its original scene item is switched off and the bus holds the only visible copy. `base` = the item's own OBS transform.
+   */
+  private dskBus: ({ scene: string; source: string; base: Record<string, unknown> | null } | null)[] = Array.from({ length: DSK_COUNT }, () => null);
 
   /** Hydrate stored config on the client. Safe to call repeatedly. */
   boot() {
@@ -271,7 +279,7 @@ export class SwitcherEngine {
     const active = [...this.state.dskActive];
     for (let i = 0; i < DSK_COUNT; i++) {
       const target = this.state.config.dsks[i];
-      if (!target?.source) continue;
+      if (!target?.source || this.dskBus[i]) continue;
       const scene = target.scene || this.state.programScene || "";
       const on = await this.transport.readDSK(i, scene, target.source);
       if (on !== null) active[i] = on;
@@ -401,10 +409,18 @@ export class SwitcherEngine {
           this.setLive({ pip });
         } else if (event.source === this.state.config.ad.scene) {
           this.setLive({ sqm: event.on });
+        } else {
+          const di = this.state.config.dsks.findIndex((d, k) => !!d.source && d.source === event.source && !!this.dskBus[k]);
+          if (di >= 0 && this.state.dskActive[di] !== event.on) {
+            const dskActive = [...this.state.dskActive];
+            dskActive[di] = event.on;
+            this.set({ dskActive });
+          }
         }
         break;
       }
       case "dsk": {
+        if (this.dskBus[event.index]) break; // the bus holds this DSK: the original item is meant to be off
         const dskActive = [...this.state.dskActive];
         dskActive[event.index] = event.on;
         this.set({ dskActive });
@@ -1048,8 +1064,34 @@ export class SwitcherEngine {
 
   /** Item names that live above the cams in every bus: advertisement first (lowest), then PIP 1, PIP 2. */
   private overlaySources(): string[] {
-    const ad = this.state.config.ad.scene;
-    return [...(ad ? [ad] : []), ...PIP_SCENES];
+    const { ad, dsks } = this.state.config;
+    const dskSources = dsks.map((d) => d.source).filter((n): n is string => !!n && n !== ad.scene && !this.fxCams().includes(n));
+    return [...new Set([...(ad.scene ? [ad.scene] : []), ...PIP_SCENES, ...dskSources])];
+  }
+
+  /** Where a DSK that rides in the bus sits, inside `region` (the squeezed picture area, or the whole screen). */
+  private dskRect(index: number, region: FxRect): FxRect | null {
+    const held = this.dskBus[index];
+    const live = this.live;
+    const place = this.state.config.dsks[index]?.place;
+    if (!held || !live) return null;
+    if (place) return placeIn(dskPlaceRect(place, live.w, live.h), region);
+    if (held.base) return placeIn({ ...FULL_RECT, raw: held.base }, region);
+    return placeIn({ ...FULL_RECT, bw: live.w, bh: live.h }, region);
+  }
+
+  /** The PIPs and bus DSKs that are up, placed inside `region`: they squeeze together with the program picture. */
+  private overlayFrame(region: FxRect): Record<string, FxRect | null> {
+    const live = this.live;
+    const out: Record<string, FxRect | null> = {};
+    if (!live) return out;
+    this.state.config.pips.forEach((p, i) => {
+      if (this.state.live.pip[i]) out[PIP_SCENES[i]!] = placeIn(pipRect(p.corner, p.size, live.w, live.h, p.pos), region);
+    });
+    this.state.config.dsks.forEach((d, i) => {
+      if (d.source && this.dskBus[i] && this.state.dskActive[i]) out[d.source] = this.dskRect(i, region);
+    });
+    return out;
   }
 
   private async liveDrawMain(bus: string, cam: string, region: FxRect = this.mainRegion()) {
@@ -1062,10 +1104,14 @@ export class SwitcherEngine {
   private async liveDrawOverlays(bus: string) {
     const live = this.live;
     if (!live) return;
-    const { pips, ad } = this.state.config;
+    const { pips, ad, dsks } = this.state.config;
+    const region = this.mainRegion();
     const frame: Record<string, FxRect | null> = {};
     pips.forEach((p, i) => {
-      frame[PIP_SCENES[i]!] = this.state.live.pip[i] ? pipRect(p.corner, p.size, live.w, live.h) : null;
+      frame[PIP_SCENES[i]!] = this.state.live.pip[i] ? placeIn(pipRect(p.corner, p.size, live.w, live.h, p.pos), region) : null;
+    });
+    dsks.forEach((d, i) => {
+      if (d.source && this.dskBus[i]) frame[d.source] = this.state.dskActive[i] ? this.dskRect(i, region) : null;
     });
     if (ad.scene) frame[ad.scene] = this.state.live.sqm ? this.adTargets().end.ad : null;
     await this.transport?.fxFrame(frame, bus);
@@ -1130,6 +1176,7 @@ export class SwitcherEngine {
       await t.fxCutTo(A);
       await t.setPreviewScene(B);
       this.setLive({ on: true, pip: [false, false], sqm: false, progBus: A, previewBus: B });
+      await this.dskToBus(A, B);
       return true;
     } catch (error) {
       this.live = null;
@@ -1152,9 +1199,12 @@ export class SwitcherEngine {
     const cam = live.mains[this.progBus()];
     const pv = this.state.previewScene;
     this.set({ fx: { running: true, layout: null } });
+    const bus = this.progBus();
+    const hideBus = await this.dskFromBus(bus);
     this.live = null;
     try {
       if (cam) await t.fxCutTo(cam);
+      await hideBus?.();
       await t.setPreviewScene(pv ?? cam ?? "");
     } catch {
       this.notice("Could not leave live mode cleanly — pick a cam on PGM");
@@ -1192,6 +1242,14 @@ export class SwitcherEngine {
       const cur = bus === A ? ra : rb;
       const ad = this.state.config.ad.scene;
       const main = bus === A ? mainA : mainB;
+      const dskActive = [...this.state.dskActive];
+      this.state.config.dsks.forEach((d, i) => {
+        if (d.source && cur[d.source]) {
+          this.dskBus[i] = { scene: d.scene || main, source: d.source, base: null };
+          dskActive[i] = true;
+        }
+      });
+      this.set({ dskActive });
       this.set({
         programScene: main,
         program: this.camForScene(main),
@@ -1235,8 +1293,12 @@ export class SwitcherEngine {
         await t.liveEnsure(bus, overlays, this.adUnder());
         await t.liveEnsure(this.otherBus(bus), overlays, this.adUnder());
       }
-      await this.fxAnimate(ms, (e) => t.fxFrame({ [name]: pipAt(cfg.corner, cfg.size, turningOn ? e : 1 - e, live.w, live.h) }, bus));
-      const rest = turningOn ? pipRect(cfg.corner, cfg.size, live.w, live.h) : null;
+      const region = this.mainRegion();
+      await this.fxAnimate(ms, (e) => {
+        const r = pipAt(cfg.corner, cfg.size, turningOn ? e : 1 - e, live.w, live.h, cfg.pos);
+        return t.fxFrame({ [name]: r ? placeIn(r, region) : null }, bus);
+      });
+      const rest = turningOn ? placeIn(pipRect(cfg.corner, cfg.size, live.w, live.h, cfg.pos), region) : null;
       await t.fxFrame({ [name]: rest }, bus);
       await t.fxFrame({ [name]: rest }, this.otherBus(bus));
       const real = await t.liveRead(bus);
@@ -1281,8 +1343,9 @@ export class SwitcherEngine {
     const live = this.live;
     const name = PIP_SCENES[slot];
     if (!t || !live || !name || !this.state.live.pip[slot] || this.state.fx.running) return;
-    const from = pipRect(before.corner, before.size, live.w, live.h);
-    const to = pipRect(next.corner, next.size, live.w, live.h);
+    const region = this.mainRegion();
+    const from = placeIn(pipRect(before.corner, before.size, live.w, live.h, before.pos), region);
+    const to = placeIn(pipRect(next.corner, next.size, live.w, live.h, next.pos), region);
     const bus = this.progBus();
     this.set({ fx: { running: true, layout: null } });
     try {
@@ -1336,11 +1399,14 @@ export class SwitcherEngine {
       await this.adAnimate(
         ms,
         ad.style,
-        (e) => t.fxFrame({ [cam]: lerpRect(from.main, to.main, e), [ad.scene as string]: lerpRect(from.ad, to.ad, e) }, bus),
+        (e) => {
+          const region = lerpRect(from.main, to.main, e);
+          return t.fxFrame({ [cam]: region, [ad.scene as string]: lerpRect(from.ad, to.ad, e), ...this.overlayFrame(region) }, bus);
+        },
         (raw) => this.set({ tBar: raw }),
       );
       this.setLive({ sqm: turningOn });
-      await t.fxFrame({ [cam]: this.mainRegion(), [ad.scene]: turningOn ? end.ad : null }, bus);
+      await t.fxFrame({ [cam]: this.mainRegion(), [ad.scene]: turningOn ? end.ad : null, ...this.overlayFrame(this.mainRegion()) }, bus);
       await this.liveSyncFree();
       const real = await t.liveRead(bus);
       const on = !!real[ad.scene];
@@ -1365,7 +1431,7 @@ export class SwitcherEngine {
       this.notice("The advertisement cannot be one of the cam scenes");
       return;
     }
-    this.updateConfig({ ad: next });
+    this.updateConfig({ ad: next, adPresets: this.withActivePreset(next) });
     const t = this.transport;
     if (!t || this.state.status !== "connected") return;
     if (patch.scene !== undefined && patch.scene !== prev.scene) {
@@ -1421,8 +1487,11 @@ export class SwitcherEngine {
       if (!cam) return;
       this.set({ fx: { running: true, layout: null } });
       try {
-        await this.adAnimate(500, next.style, (e) => t.fxFrame({ [cam]: lerpRect(a.main, b.main, e), [adName]: lerpRect(a.ad, b.ad, e) }, bus));
-        await t.fxFrame({ [cam]: b.main, [adName]: b.ad }, bus);
+        await this.adAnimate(500, next.style, (e) => {
+          const region = lerpRect(a.main, b.main, e);
+          return t.fxFrame({ [cam]: region, [adName]: lerpRect(a.ad, b.ad, e), ...this.overlayFrame(region) }, bus);
+        });
+        await t.fxFrame({ [cam]: b.main, [adName]: b.ad, ...this.overlayFrame(b.main) }, bus);
         await this.liveSyncFree();
       } catch {
         this.notice("Advertisement: OBS did not apply the layout");
@@ -1430,6 +1499,70 @@ export class SwitcherEngine {
         this.set({ fx: { running: false, layout: null } });
       }
     }
+  }
+
+  // ------------------------------------------------- Squeeze Merge presets (made in Settings, picked on the live screen)
+
+  private withActivePreset(ad: AdConfig): AdPreset[] {
+    const { adPresets, adActive } = this.state.config;
+    return adPresets.map((p, i) => (i === adActive ? { ...p, ad } : p));
+  }
+
+  /** Pick the Squeeze Merge to use. Not while one is in: take it out first so nothing jumps on air. */
+  async selectAdPreset(index: number) {
+    const { adPresets, adActive } = this.state.config;
+    const preset = adPresets[index];
+    if (!preset || index === adActive) return;
+    if (this.state.live.sqm || this.state.fx.running) {
+      this.notice("Take SQZ MERGE out first, then pick another one");
+      return;
+    }
+    this.updateConfig({ adActive: index });
+    await this.setAd({ ...preset.ad });
+  }
+
+  /** New preset: starts as a copy of the one you are using. */
+  addAdPreset(name?: string): number {
+    const { adPresets, ad } = this.state.config;
+    const n = adPresets.length;
+    if (n >= 24) {
+      this.notice("Up to 24 Squeeze Merge presets");
+      return n - 1;
+    }
+    this.updateConfig({ adPresets: [...adPresets, { name: (name || `Squeeze Merge ${n + 1}`).slice(0, 32), ad: { ...ad } }] });
+    return n;
+  }
+
+  renameAdPreset(index: number, name: string) {
+    this.updateConfig({ adPresets: this.state.config.adPresets.map((p, i) => (i === index ? { ...p, name: name.slice(0, 32) } : p)) });
+  }
+
+  /** Edit one preset. If it is the one selected, OBS follows (glides when it is in). */
+  async editAdPreset(index: number, patch: Partial<AdConfig>) {
+    const { adPresets, adActive } = this.state.config;
+    if (!adPresets[index]) return;
+    if (index === adActive) {
+      await this.setAd(patch);
+      return;
+    }
+    if (patch.scene && this.fxCams().includes(patch.scene)) {
+      this.notice("The advertisement cannot be one of the cam scenes");
+      return;
+    }
+    this.updateConfig({ adPresets: adPresets.map((p, i) => (i === index ? { ...p, ad: { ...p.ad, ...patch } } : p)) });
+  }
+
+  async removeAdPreset(index: number) {
+    const { adPresets, adActive } = this.state.config;
+    if (adPresets.length <= 1 || !adPresets[index]) return;
+    if (index === adActive && (this.state.live.sqm || this.state.fx.running)) {
+      this.notice("Take SQZ MERGE out first, then delete the one in use");
+      return;
+    }
+    const list = adPresets.filter((_, i) => i !== index);
+    const next = index === adActive ? 0 : adActive > index ? adActive - 1 : adActive;
+    this.updateConfig({ adPresets: list, adActive: next });
+    if (index === adActive) await this.setAd({ ...list[next]!.ad });
   }
 
   async listSources() {
@@ -1453,17 +1586,24 @@ export class SwitcherEngine {
       this.notice("Not connected");
       return;
     }
-    const scene = target.scene || this.state.programScene || "";
+    const held = this.dskBus[index];
+    const scene = held?.scene || target.scene || this.state.programScene || "";
     if (!scene) {
       this.notice(`DSK ${index + 1}: no scene on air yet`);
       return;
     }
     const next = !this.state.dskActive[index];
     const previous = this.state.dskActive[index];
+    // While live (PIP / Squeeze Merge up) the DSK rides in the bus so it squeezes with the picture.
+    if (this.live && target.source) {
+      await this.toggleDskBus(index, scene, next);
+      return;
+    }
     const dskActive = [...this.state.dskActive];
     dskActive[index] = next;
     this.set({ dskActive });
     try {
+      if (next && target.place && target.source && !this.state.demo) await this.applyDskPlace(index, scene);
       await this.transport.toggleDSK(index, !!next, scene, target.source || `DSK ${index + 1}`);
     } catch {
       // Roll back the light if OBS rejected it (wrong scene / source name).
@@ -1471,6 +1611,130 @@ export class SwitcherEngine {
       rollback[index] = !!previous;
       this.set({ dskActive: rollback });
       this.notice(`DSK ${index + 1}: "${target.source}" not found in "${scene}"`);
+    }
+  }
+
+  /** Canvas size: from the live compositor when it is up, else asked from OBS. */
+  private async canvasSize(): Promise<{ w: number; h: number }> {
+    if (this.live) return { w: this.live.w, h: this.live.h };
+    try {
+      const c = await this.transport?.getCanvas();
+      if (c) return { w: c.width, h: c.height };
+    } catch {
+      /* fall through */
+    }
+    return { w: 1920, h: 1080 };
+  }
+
+  /** Move / size the DSK item inside its scene to the box picked in Settings. */
+  private async applyDskPlace(index: number, scene: string) {
+    const target = this.state.config.dsks[index];
+    if (!this.transport || !target?.place || !target.source) return;
+    const { w, h } = await this.canvasSize();
+    await this.transport.placeDSK(scene, target.source, dskPlaceRect(target.place, w, h));
+  }
+
+  /** DSK on / off while the live bus is up: the bus copy is the one that shows. */
+  private async toggleDskBus(index: number, scene: string, on: boolean) {
+    const t = this.transport;
+    const live = this.live;
+    const target = this.state.config.dsks[index];
+    if (!t || !live || !target?.source) return;
+    const source = target.source;
+    const prev = this.state.dskActive[index];
+    const bus = this.progBus();
+    const free = this.otherBus(bus);
+    try {
+      if (on) {
+        const base = target.place ? null : await t.readItemTransform(scene, source);
+        this.dskBus[index] = { scene, source, base };
+        const overlays = this.overlaySources();
+        await t.liveEnsure(bus, overlays, this.adUnder());
+        await t.liveEnsure(free, overlays, this.adUnder());
+        const dskActive = [...this.state.dskActive];
+        dskActive[index] = true;
+        this.set({ dskActive });
+        const rect = this.dskRect(index, this.mainRegion());
+        await t.fxFrame({ [source]: rect }, bus);
+        await t.fxFrame({ [source]: rect }, free);
+        // Make sure the original item is off, so the picture is not drawn twice.
+        await t.toggleDSK(index, false, scene, source).catch(() => {});
+      } else {
+        await t.fxFrame({ [source]: null }, bus);
+        await t.fxFrame({ [source]: null }, free);
+        const dskActive = [...this.state.dskActive];
+        dskActive[index] = false;
+        this.set({ dskActive });
+      }
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`DSK ${index + 1}: OBS did not apply it${why}`);
+      const dskActive = [...this.state.dskActive];
+      dskActive[index] = !!prev;
+      this.set({ dskActive });
+      if (!prev) this.dskBus[index] = null;
+    }
+  }
+
+  /** Going live: DSKs that are on move into the bus (the original item goes off, the bus copy shows the same picture). */
+  private async dskToBus(bus: string, free: string) {
+    const t = this.transport;
+    const live = this.live;
+    if (!t || !live) return;
+    for (let i = 0; i < DSK_COUNT; i++) {
+      const target = this.state.config.dsks[i];
+      if (!target?.source || !this.state.dskActive[i]) continue;
+      const scene = target.scene || this.state.programScene || "";
+      if (!scene) continue;
+      try {
+        const base = target.place ? null : await t.readItemTransform(scene, target.source);
+        this.dskBus[i] = { scene, source: target.source, base };
+        const rect = this.dskRect(i, FULL_RECT);
+        await t.fxFrame({ [target.source]: rect }, bus);
+        await t.fxFrame({ [target.source]: rect }, free);
+        await t.toggleDSK(i, false, scene, target.source);
+      } catch {
+        this.dskBus[i] = null;
+        this.notice(`DSK ${i + 1}: could not move into the live layout`);
+      }
+    }
+  }
+
+  /** Leaving live: DSKs that are on go back to their own scene item, then the bus copy is hidden. */
+  private async dskFromBus(bus: string) {
+    const t = this.transport;
+    if (!t) return;
+    const held = this.dskBus.map((h, i) => (h ? { i, ...h } : null)).filter((h): h is NonNullable<typeof h> => !!h);
+    for (const h of held) {
+      this.dskBus[h.i] = null;
+      if (this.state.dskActive[h.i]) await t.toggleDSK(h.i, true, h.scene, h.source).catch(() => {});
+    }
+    return async () => {
+      for (const h of held) {
+        await t.fxFrame({ [h.source]: null }, bus).catch(() => {});
+        await t.fxFrame({ [h.source]: null }, this.otherBus(bus)).catch(() => {});
+      }
+    };
+  }
+
+  /** DSK position / size picked in Settings. Moves it right away when it is on air. */
+  async setDskPlace(index: number, place: DskPlace | null) {
+    const target = this.state.config.dsks[index];
+    if (!target) return;
+    this.setDskTarget(index, { place });
+    const t = this.transport;
+    if (!t || this.state.status !== "connected" || !target.source || !place) return;
+    const held = this.dskBus[index];
+    try {
+      if (held && this.live) {
+        const rect = this.dskRect(index, this.mainRegion());
+        await t.fxFrame({ [target.source]: rect }, this.progBus());
+        await t.fxFrame({ [target.source]: rect }, this.otherBus(this.progBus()));
+      } else if (this.state.dskActive[index]) {
+        await this.applyDskPlace(index, target.scene || this.state.programScene || "");
+      }
+    } catch {
+      this.notice(`DSK ${index + 1}: OBS did not apply the position`);
     }
   }
 

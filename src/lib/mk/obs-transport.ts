@@ -477,6 +477,68 @@ export class ObsTransport implements Transport {
     });
   }
 
+  async getCanvas() {
+    const v = await this.obs.call("GetVideoSettings");
+    return { width: v.baseWidth, height: v.baseHeight };
+  }
+
+  async placeDSK(scene: string, source: string, rect: FxRect) {
+    if (!scene || !source) return;
+    const { sceneItemId } = await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: source });
+    await this.obs.call("SetSceneItemTransform", {
+      sceneName: scene,
+      sceneItemId,
+      sceneItemTransform: this.rectTransform(rect) as never,
+    });
+  }
+
+  async readItemTransform(scene: string, source: string): Promise<Record<string, unknown> | null> {
+    if (!scene || !source) return null;
+    try {
+      const { sceneItemId } = await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: source });
+      const { sceneItemTransform } = await this.obs.call("GetSceneItemTransform", { sceneName: scene, sceneItemId });
+      return sceneItemTransform as unknown as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  /** OBS transform for an FxRect (bounded box, scaled item, or a ready-made raw transform). */
+  private rectTransform(r: FxRect): Record<string, unknown> {
+    if (r.raw) return r.raw;
+    const bounded = r.bw !== undefined && r.bh !== undefined;
+    return bounded
+      ? {
+          positionX: r.x + (r.bw as number) / 2,
+          positionY: r.y + (r.bh as number) / 2,
+          rotation: 0,
+          alignment: 0,
+          scaleX: 1,
+          scaleY: 1,
+          boundsType: r.fill ? "OBS_BOUNDS_SCALE_OUTER" : "OBS_BOUNDS_SCALE_INNER",
+          boundsAlignment: 0,
+          boundsWidth: Math.max(2, r.bw as number),
+          boundsHeight: Math.max(2, r.bh as number),
+          cropLeft: 0,
+          cropRight: 0,
+          cropTop: 0,
+          cropBottom: 0,
+        }
+      : {
+          positionX: r.x,
+          positionY: r.y,
+          scaleX: Math.max(r.sx, 0.001),
+          scaleY: Math.max(r.sy, 0.001),
+          rotation: 0,
+          alignment: 5, // top-left
+          boundsType: "OBS_BOUNDS_NONE",
+          cropLeft: Math.round(r.cl),
+          cropRight: Math.round(r.cr),
+          cropTop: Math.round(r.ct),
+          cropBottom: Math.round(r.cb),
+        };
+  }
+
   async readDSK(index: number, scene: string, source: string): Promise<boolean | null> {
     if (!scene || !source) return null;
     try {
@@ -834,44 +896,10 @@ export class ObsTransport implements Transport {
       const id = table.ids.get(name);
       if (id === undefined) continue;
       if (r) {
-        const bounded = r.bw !== undefined && r.bh !== undefined;
         // Place it first, then show it, so an item never appears for a frame in its old spot.
         requests.push({
           requestType: "SetSceneItemTransform",
-          requestData: {
-            sceneName: scene,
-            sceneItemId: id,
-            sceneItemTransform: bounded
-              ? {
-                  positionX: r.x + (r.bw as number) / 2,
-                  positionY: r.y + (r.bh as number) / 2,
-                  rotation: 0,
-                  alignment: 0,
-                  scaleX: 1,
-                  scaleY: 1,
-                  boundsType: r.fill ? "OBS_BOUNDS_SCALE_OUTER" : "OBS_BOUNDS_SCALE_INNER",
-                  boundsAlignment: 0,
-                  boundsWidth: Math.max(2, r.bw as number),
-                  boundsHeight: Math.max(2, r.bh as number),
-                  cropLeft: 0,
-                  cropRight: 0,
-                  cropTop: 0,
-                  cropBottom: 0,
-                }
-              : {
-                  positionX: r.x,
-                  positionY: r.y,
-                  scaleX: Math.max(r.sx, 0.001),
-                  scaleY: Math.max(r.sy, 0.001),
-                  rotation: 0,
-                  alignment: 5, // top-left
-                  boundsType: "OBS_BOUNDS_NONE",
-                  cropLeft: Math.round(r.cl),
-                  cropRight: Math.round(r.cr),
-                  cropTop: Math.round(r.ct),
-                  cropBottom: Math.round(r.cb),
-                },
-          },
+          requestData: { sceneName: scene, sceneItemId: id, sceneItemTransform: this.rectTransform(r) as never },
         });
       }
       if (table.on.get(name) !== !!r) {

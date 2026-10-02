@@ -1,5 +1,20 @@
 // Local-only configuration persistence. OBS credentials never leave the device.
-import { AD_LAYOUTS, AD_STYLES, ANCHORS, DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, PIP_CORNERS, SQUEEZE_DIRS, type AdConfig, type FxConfig, type PipSlot } from "./fx";
+import {
+  AD_LAYOUTS,
+  AD_STYLES,
+  ANCHORS,
+  DEFAULT_AD,
+  DEFAULT_FX,
+  DEFAULT_PIPS,
+  PIP_CORNERS,
+  SQUEEZE_DIRS,
+  type AdConfig,
+  type AdPreset,
+  type DskPlace,
+  type FxConfig,
+  type PipSlot,
+  type PlacePos,
+} from "./fx";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -45,7 +60,10 @@ export function cleanScrolls(list: unknown[]): ScrollPreset[] {
     if (typeof p["text"] !== "string" || !p["text"].trim()) continue;
     const speed = Number(p["speed"]);
     out.push({
-      name: (typeof p["name"] === "string" && p["name"].trim() ? p["name"] : p["text"]).slice(0, 24),
+      name: (typeof p["name"] === "string" && p["name"].trim() ? p["name"] : p["text"]).slice(
+        0,
+        24,
+      ),
       text: p["text"].slice(0, 400),
       label: typeof p["label"] === "string" ? p["label"].slice(0, 24) : "",
       speed: Number.isFinite(speed) ? Math.max(8, Math.min(120, speed)) : 22,
@@ -97,10 +115,32 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
 function mergeFx(raw: unknown): FxConfig {
   const r = (raw ?? {}) as Partial<FxConfig>;
   return {
-    pipCorner: PIP_CORNERS.includes(r.pipCorner as never) ? (r.pipCorner as FxConfig["pipCorner"]) : DEFAULT_FX.pipCorner,
-    pipSize: typeof r.pipSize === "number" ? Math.min(0.5, Math.max(0.15, r.pipSize)) : DEFAULT_FX.pipSize,
-    squeezeDir: SQUEEZE_DIRS.includes(r.squeezeDir as never) ? (r.squeezeDir as FxConfig["squeezeDir"]) : DEFAULT_FX.squeezeDir,
+    pipCorner: PIP_CORNERS.includes(r.pipCorner as never)
+      ? (r.pipCorner as FxConfig["pipCorner"])
+      : DEFAULT_FX.pipCorner,
+    pipSize:
+      typeof r.pipSize === "number" ? Math.min(0.5, Math.max(0.15, r.pipSize)) : DEFAULT_FX.pipSize,
+    squeezeDir: SQUEEZE_DIRS.includes(r.squeezeDir as never)
+      ? (r.squeezeDir as FxConfig["squeezeDir"])
+      : DEFAULT_FX.squeezeDir,
   };
+}
+
+const unit = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null;
+
+function mergePos(raw: unknown): PlacePos | null {
+  const r = (raw ?? {}) as Partial<PlacePos>;
+  const x = unit(r.x);
+  const y = unit(r.y);
+  return x === null || y === null ? null : { x, y };
+}
+
+function mergeDskPlace(raw: unknown): DskPlace | null {
+  const pos = mergePos(raw);
+  const size = (raw as Partial<DskPlace> | null | undefined)?.size;
+  if (!pos || typeof size !== "number") return null;
+  return { ...pos, size: Math.min(1, Math.max(0.05, size)) };
 }
 
 function mergePips(raw: unknown): PipSlot[] {
@@ -110,7 +150,8 @@ function mergePips(raw: unknown): PipSlot[] {
     return {
       scene: typeof r.scene === "string" && r.scene ? r.scene : null,
       corner: PIP_CORNERS.includes(r.corner as never) ? (r.corner as PipSlot["corner"]) : d.corner,
-      size: typeof r.size === "number" ? Math.min(0.5, Math.max(0.15, r.size)) : d.size,
+      size: typeof r.size === "number" ? Math.min(0.5, Math.max(0.1, r.size)) : d.size,
+      pos: mergePos(r.pos),
     };
   });
 }
@@ -120,12 +161,41 @@ function mergeAd(raw: unknown): AdConfig {
   return {
     scene: typeof r.scene === "string" && r.scene ? r.scene : null,
     look: r.look === "strip" ? "strip" : r.look === "frame" ? "frame" : DEFAULT_AD.look,
-    anchor: ANCHORS.includes(r.anchor as never) ? (r.anchor as AdConfig["anchor"]) : DEFAULT_AD.anchor,
-    style: AD_STYLES.some((x) => x.id === r.style) ? (r.style as AdConfig["style"]) : DEFAULT_AD.style,
-    layout: AD_LAYOUTS.some((l) => l.id === r.layout) ? (r.layout as AdConfig["layout"]) : DEFAULT_AD.layout,
+    anchor: ANCHORS.includes(r.anchor as never)
+      ? (r.anchor as AdConfig["anchor"])
+      : DEFAULT_AD.anchor,
+    style: AD_STYLES.some((x) => x.id === r.style)
+      ? (r.style as AdConfig["style"])
+      : DEFAULT_AD.style,
+    layout: AD_LAYOUTS.some((l) => l.id === r.layout)
+      ? (r.layout as AdConfig["layout"])
+      : DEFAULT_AD.layout,
     size: typeof r.size === "number" ? Math.min(0.4, Math.max(0.15, r.size)) : DEFAULT_AD.size,
     fit: r.fit === "fill" ? "fill" : "fit",
   };
+}
+
+function mergeAdPresets(
+  raw: unknown,
+  current: AdConfig,
+): { adPresets: AdPreset[]; adActive: number } {
+  const list = Array.isArray(raw) ? raw : [];
+  const adPresets: AdPreset[] = list
+    .filter((p) => !!p && typeof p === "object")
+    .slice(0, 24)
+    .map((p, i) => {
+      const r = p as Partial<AdPreset>;
+      return {
+        name:
+          typeof r.name === "string" && r.name.trim()
+            ? r.name.slice(0, 32)
+            : `Squeeze Merge ${i + 1}`,
+        ad: mergeAd(r.ad),
+      };
+    });
+  // First run with presets: the Squeeze Merge that was already set up becomes preset 1.
+  if (!adPresets.length) adPresets.push({ name: "Squeeze Merge 1", ad: current });
+  return { adPresets, adActive: 0 };
 }
 
 export function loadConfig(): MkConfig {
@@ -134,14 +204,16 @@ export function loadConfig(): MkConfig {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_CONFIG;
     const parsed = JSON.parse(raw) as Stored;
-    const camScenes = Array.from(
-      { length: CAM_COUNT },
-      (_, i) => parsed.camScenes?.[i] ?? null,
-    );
+    const camScenes = Array.from({ length: CAM_COUNT }, (_, i) => parsed.camScenes?.[i] ?? null);
     // Migrate the old single-DSK fields into DSK 1.
     const dsks: DskTarget[] = Array.from({ length: DSK_COUNT }, (_, i) => {
       const stored = parsed.dsks?.[i];
-      if (stored) return { scene: stored.scene ?? "", source: stored.source ?? "" };
+      if (stored)
+        return {
+          scene: stored.scene ?? "",
+          source: stored.source ?? "",
+          place: mergeDskPlace(stored.place),
+        };
       if (i === 0 && (parsed.dskScene || parsed.dskSource)) {
         return { scene: parsed.dskScene ?? "", source: parsed.dskSource ?? "" };
       }
@@ -163,17 +235,31 @@ export function loadConfig(): MkConfig {
             .slice(0, 40)
             .map((i) => ({
               text: i.text.slice(0, 120),
-              secs: typeof i.secs === "number" && i.secs > 0 ? Math.min(Math.round(i.secs), 86_400) : 0,
+              secs:
+                typeof i.secs === "number" && i.secs > 0 ? Math.min(Math.round(i.secs), 86_400) : 0,
             }))
         : [],
       fx: mergeFx((parsed as { fx?: unknown }).fx),
       pips: mergePips((parsed as { pips?: unknown }).pips),
-      ad: mergeAd((parsed as { ad?: unknown }).ad),
-      hiddenAudio: Array.isArray(parsed.hiddenAudio) ? parsed.hiddenAudio.filter((n): n is string => typeof n === "string") : [],
+      ...(() => {
+        const p = parsed as { ad?: unknown; adPresets?: unknown; adActive?: unknown };
+        const merged = mergeAdPresets(p.adPresets, mergeAd(p.ad));
+        const active =
+          typeof p.adActive === "number" && p.adActive >= 0 && p.adActive < merged.adPresets.length
+            ? Math.floor(p.adActive)
+            : 0;
+        // The working copy always matches the selected preset.
+        return { adPresets: merged.adPresets, adActive: active, ad: merged.adPresets[active]!.ad };
+      })(),
+      hiddenAudio: Array.isArray(parsed.hiddenAudio)
+        ? parsed.hiddenAudio.filter((n): n is string => typeof n === "string")
+        : [],
       limiter: {
         on: typeof parsed.limiter?.on === "boolean" ? parsed.limiter.on : DEFAULT_LIMITER.on,
         threshold:
-          typeof parsed.limiter?.threshold === "number" ? parsed.limiter.threshold : DEFAULT_LIMITER.threshold,
+          typeof parsed.limiter?.threshold === "number"
+            ? parsed.limiter.threshold
+            : DEFAULT_LIMITER.threshold,
       },
     };
   } catch {

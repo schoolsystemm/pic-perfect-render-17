@@ -48,6 +48,12 @@ export interface Transport {
   setTransitionDuration(ms: number): Promise<void>;
   setTBarPosition(position: number, release: boolean): Promise<void>;
   toggleDSK(index: number, on: boolean, scene: string, source: string): Promise<void>;
+  /** OBS canvas size (base resolution). */
+  getCanvas(): Promise<{ width: number; height: number }>;
+  /** Move / size a DSK scene item to a hand-picked box (fitted inside it). Needs the canvas size. */
+  placeDSK(scene: string, source: string, rect: FxRect): Promise<void>;
+  /** The item's current OBS transform (null when unknown). Lets the live bus copy it so a DSK keeps its look while squeezed. */
+  readItemTransform(scene: string, source: string): Promise<Record<string, unknown> | null>;
   /** Read the current on/off state of a DSK scene item (null when unknown). */
   readDSK(index: number, scene: string, source: string): Promise<boolean | null>;
   setInputVolume(name: string, db: number): Promise<void>;

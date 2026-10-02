@@ -2,7 +2,7 @@
 // Kept free of UI and transport concerns so the same contracts can later back a
 // physical MK VISION PANEL hardware interface.
 
-import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type FxConfig, type FxLayoutKind, type PipSlot } from "./fx";
+import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type AdPreset, type DskPlace, type FxConfig, type FxLayoutKind, type PipSlot } from "./fx";
 
 export const CAM_COUNT = 8;
 export const DSK_COUNT = 2;
@@ -19,6 +19,8 @@ export interface DskTarget {
   scene: string;
   /** Scene item toggled by the DSK button. */
   source: string;
+  /** Spot + size picked by hand in Settings (null / missing = leave the item where OBS has it). */
+  place?: DskPlace | null;
 }
 
 export type Corner = "tl" | "tr" | "bl" | "br";
@@ -205,8 +207,11 @@ export interface MkConfig {
   fx: FxConfig;
   /** PIP 1 / PIP 2: persistent scene assignment + position + size. */
   pips: PipSlot[];
-  /** Squeeze Merge advertisement: content, layout and size. */
+  /** The Squeeze Merge that is selected right now (a copy of adPresets[adActive]; the engine works with this one). */
   ad: AdConfig;
+  /** Every Squeeze Merge made in Settings; the live screen just picks one from a drop-down. Always at least one. */
+  adPresets: AdPreset[];
+  adActive: number;
 }
 
 /** What the live compositor is doing in OBS right now (confirmed from OBS, not assumed). */
@@ -291,6 +296,8 @@ export const DEFAULT_CONFIG: MkConfig = {
   fx: DEFAULT_FX,
   pips: DEFAULT_PIPS,
   ad: DEFAULT_AD,
+  adPresets: [{ name: "Squeeze Merge 1", ad: DEFAULT_AD }],
+  adActive: 0,
 };
 
 export interface SwitcherState {
