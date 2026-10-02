@@ -8,6 +8,8 @@ interface PlacePickerProps {
   pos: PlacePos | null;
   /** Share of the picture width the item takes (0.05 .. 1). */
   size: number;
+  /** Share of the picture HEIGHT the item takes. Defaults to `size` (same shape as the screen, which is right for PiP / DSK). */
+  height?: number;
   /** Called when the finger / mouse is released, or a snap button is pressed. */
   onChange: (pos: PlacePos) => void;
   label?: string;
@@ -31,11 +33,12 @@ const SNAPS: PlacePos[] = [
  * A small 16:9 screen: press / drag where the item should sit. What you see is what OBS gets
  * (the same 0..1 spot the engine turns into pixels).
  */
-export function PlacePicker({ pos, size, onChange, label, disabled }: PlacePickerProps) {
+export function PlacePicker({ pos, size, height, onChange, label, disabled }: PlacePickerProps) {
   const box = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<PlacePos | null>(null);
   const shown = drag ?? pos;
   const w = Math.min(1, Math.max(0.05, size));
+  const h = Math.min(1, Math.max(0.03, height ?? size));
 
   const read = (e: React.PointerEvent): PlacePos => {
     const r = box.current!.getBoundingClientRect();
@@ -44,7 +47,7 @@ export function PlacePicker({ pos, size, onChange, label, disabled }: PlacePicke
     // The pointer is the CENTRE of the item; the free space is what is left after its size.
     return {
       x: w >= 1 ? 0 : clamp01((px - w / 2) / (1 - w)),
-      y: w >= 1 ? 0 : clamp01((py - w / 2) / (1 - w)),
+      y: h >= 1 ? 0 : clamp01((py - h / 2) / (1 - h)),
     };
   };
 
@@ -85,9 +88,9 @@ export function PlacePicker({ pos, size, onChange, label, disabled }: PlacePicke
             className="absolute rounded-[2px] border-2 border-amber bg-amber/30"
             style={{
               width: `${w * 100}%`,
-              height: `${w * 100}%`,
+              height: `${h * 100}%`,
               left: `${shown.x * (1 - w) * 100}%`,
-              top: `${shown.y * (1 - w) * 100}%`,
+              top: `${shown.y * (1 - h) * 100}%`,
             }}
           />
         )}
