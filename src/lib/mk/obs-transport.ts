@@ -2,7 +2,7 @@
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
-import { FX_SCENE, PIP_SCENES, type FxRect } from "./fx";
+import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { GFX_SCENE } from "./graphics";
 import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
 
@@ -142,7 +142,7 @@ export class ObsTransport implements Transport {
         for (const [source, id] of tbl.ids) {
           if (id === data.sceneItemId && tbl.on.get(source) !== data.sceneItemEnabled) {
             tbl.on.set(source, data.sceneItemEnabled);
-            this.bus.emit({ type: "liveItem", scene: data.sceneName, source, on: data.sceneItemEnabled });
+            this.bus.emit({ type: "liveItem", scene: shellOf(data.sceneName), source, on: data.sceneItemEnabled });
           }
         }
       }
@@ -709,6 +709,35 @@ export class ObsTransport implements Transport {
     if (!scenes.includes(scene)) await this.obs.call("CreateScene", { sceneName: scene });
   }
 
+  /** Shell scenes (MK LIVE A / B, MK FX) already wired to their stage scene in this session. */
+  private staged = new Set<string>();
+
+  /**
+   * Make sure `scene` is a shell around its stage (see stageOf in fx.ts) and return the scene whose items must be
+   * edited. Anything else that older MK versions left directly inside the shell is removed (the shells are MK-owned).
+   */
+  private async ensureStaged(scene: string): Promise<string> {
+    const stage = stageOf(scene);
+    if (stage === scene || this.staged.has(scene)) return stage;
+    await this.ensureScene(stage);
+    await this.ensureScene(scene);
+    const { sceneItems } = await this.obs.call("GetSceneItemList", { sceneName: scene });
+    let keptId: number | null = null;
+    for (const it of sceneItems) {
+      const id = Number(it["sceneItemId"]);
+      if (String(it["sourceName"]) === stage && keptId === null) keptId = id;
+      else await this.obs.call("RemoveSceneItem", { sceneName: scene, sceneItemId: id });
+    }
+    if (keptId === null) {
+      await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: stage, sceneItemEnabled: true });
+    } else {
+      await this.obs.call("SetSceneItemEnabled", { sceneName: scene, sceneItemId: keptId, sceneItemEnabled: true });
+    }
+    this.tables.delete(stage);
+    this.staged.add(scene);
+    return stage;
+  }
+
   /** Keep the overlays (ad, PIPs) above the camera items. */
   private async raise(scene: string) {
     const order = this.overlayOrder.get(scene);
@@ -722,8 +751,8 @@ export class ObsTransport implements Transport {
     }
   }
 
-  async fxStage(cams: string[], bottom: string, top: string, scene: string = FX_SCENE) {
-    await this.ensureScene(scene);
+  async fxStage(cams: string[], bottom: string, top: string, shell: string = FX_SCENE) {
+    const scene = await this.ensureStaged(shell);
     const video = await this.obs.call("GetVideoSettings");
     const table = await this.loadTable(scene);
     for (const cam of cams) {
@@ -742,7 +771,8 @@ export class ObsTransport implements Transport {
     return { width: video.baseWidth, height: video.baseHeight };
   }
 
-  async liveEnsure(scene: string, sources: string[]) {
+  async liveEnsure(shell: string, sources: string[]) {
+    const scene = await this.ensureStaged(shell);
     await this.ensureScene(scene);
     const table = this.tables.get(scene) ?? (await this.loadTable(scene));
     for (const name of sources) {
@@ -755,8 +785,8 @@ export class ObsTransport implements Transport {
     await this.raise(scene);
   }
 
-  async liveRead(scene: string) {
-    const table = await this.loadTable(scene);
+  async liveRead(shell: string) {
+    const table = await this.loadTable(await this.ensureStaged(shell));
     return Object.fromEntries(table.on) as Record<string, boolean>;
   }
 
@@ -790,9 +820,10 @@ export class ObsTransport implements Transport {
     for (const it of items) await this.obs.call("RemoveSceneItem", { sceneName: wrapper, sceneItemId: Number(it["sceneItemId"]) });
   }
 
-  async fxFrame(frame: Record<string, FxRect | null>, scene: string = FX_SCENE) {
+  async fxFrame(frame: Record<string, FxRect | null>, shell: string = FX_SCENE) {
+    const scene = stageOf(shell);
     const table = this.tables.get(scene);
-    if (!table) throw new Error(`MK: scene "${scene}" is not staged`);
+    if (!table) throw new Error(`MK: scene "${shell}" is not staged`);
     const requests: { requestType: string; requestData: Record<string, unknown> }[] = [];
     for (const [name, r] of Object.entries(frame)) {
       const id = table.ids.get(name);
@@ -853,6 +884,7 @@ export class ObsTransport implements Transport {
   }
 
   async fxCutTo(scene: string) {
+    await this.ensureStaged(scene);
     const previous = await this.currentTransition();
     this.quiet();
     try {
