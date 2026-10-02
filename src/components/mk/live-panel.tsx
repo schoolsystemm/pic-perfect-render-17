@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { AD_LAYOUTS, AD_SIZES, PIP_CORNERS, PIP_GLYPH, PIP_SIZES, type AdConfig, type PipSlot } from "@/lib/mk/fx";
+import { AD_LAYOUTS, AD_SIZES, AD_STYLES, ANCHORS, ANCHOR_GLYPH, PIP_CORNERS, PIP_GLYPH, PIP_SIZES, type AdConfig, type PipSlot } from "@/lib/mk/fx";
 import { engine } from "@/lib/mk/use-switcher";
 import type { LiveState } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -128,19 +128,85 @@ export function LivePanel({ live, pips, ad, scenes, connected, busy }: LivePanel
           )}
           {ad.scene && !adOptions.some((s) => s.name === ad.scene) && <option value={ad.scene}>{ad.scene}</option>}
         </select>
-        <div className="mt-1 grid grid-cols-4 gap-1" role="group" aria-label="Advertisement layout">
-          {AD_LAYOUTS.map((l) => (
+        <div className="mt-1 grid grid-cols-2 gap-1" role="group" aria-label="Advertisement look">
+          {(
+            [
+              { id: "frame", label: "FRAME", hint: "Ad fills the screen behind the picture; the picture shrinks into a spot (vMix look)" },
+              { id: "strip", label: "STRIP", hint: "Ad is a bar beside the picture" },
+            ] as const
+          ).map((l) => (
             <button
               key={l.id}
               type="button"
+              title={l.hint}
               disabled={busy}
-              onClick={() => void engine.setAd({ layout: l.id })}
-              className={cn("mk-button h-6 min-w-0 rounded-[3px] px-0 font-mono text-[8px]", ad.layout === l.id && "mk-lit-amber")}
+              onClick={() => void engine.setAd({ look: l.id })}
+              className={cn("mk-button h-6 min-w-0 rounded-[3px] px-0 font-mono text-[8px]", ad.look === l.id && "mk-lit-amber")}
             >
               {l.label}
             </button>
           ))}
         </div>
+        {ad.look === "frame" ? (
+          <div className="mt-1 grid grid-cols-[auto_1fr] gap-1">
+            <div className="grid grid-cols-3 gap-0.5" role="group" aria-label="Where the program picture sits">
+              {ANCHORS.map((a) => (
+                <button
+                  key={a}
+                  type="button"
+                  title="Program picture position"
+                  disabled={busy}
+                  onClick={() => void engine.setAd({ anchor: a })}
+                  className={cn("mk-button h-5 w-6 min-w-0 rounded-[2px] px-0 font-mono text-[9px]", ad.anchor === a && "mk-lit-amber")}
+                >
+                  {ANCHOR_GLYPH[a]}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-0.5" role="group" aria-label="Transition style">
+              {AD_STYLES.map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  title={st.hint}
+                  onClick={() => void engine.setAd({ style: st.id })}
+                  className={cn("mk-button h-[1.125rem] min-w-0 rounded-[2px] px-0 font-mono text-[8px]", ad.style === st.id && "mk-lit-amber")}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mt-1 grid grid-cols-4 gap-1" role="group" aria-label="Advertisement layout">
+              {AD_LAYOUTS.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void engine.setAd({ layout: l.id })}
+                  className={cn("mk-button h-6 min-w-0 rounded-[3px] px-0 font-mono text-[8px]", ad.layout === l.id && "mk-lit-amber")}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-1 grid grid-cols-4 gap-0.5" role="group" aria-label="Transition style">
+              {AD_STYLES.map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  title={st.hint}
+                  onClick={() => void engine.setAd({ style: st.id })}
+                  className={cn("mk-button h-5 min-w-0 rounded-[2px] px-0 font-mono text-[8px]", ad.style === st.id && "mk-lit-amber")}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         <div className="mt-1 grid grid-cols-5 gap-1">
           {AD_SIZES.map((v) => (
             <button
