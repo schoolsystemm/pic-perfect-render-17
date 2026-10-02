@@ -687,7 +687,7 @@ export class ObsTransport implements Transport {
 
   /** Per-scene cache: source name -> scene item id, and the on/off state we last set / saw. */
   private tables = new Map<string, { ids: Map<string, number>; on: Map<string, boolean> }>();
-  private overlayOrder = new Map<string, string[]>();
+  private overlayOrder = new Map<string, { over: string[]; under: string[] }>();
 
   private async loadTable(scene: string) {
     const list = await this.obs.call("GetSceneItemList", { sceneName: scene });
@@ -738,16 +738,21 @@ export class ObsTransport implements Transport {
     return stage;
   }
 
-  /** Keep the overlays (ad, PIPs) above the camera items. */
+  /** Keep the overlays (ad, PIPs) above the camera items; an advertisement in the frame look goes below them. */
   private async raise(scene: string) {
     const order = this.overlayOrder.get(scene);
     const table = this.tables.get(scene);
     if (!order || !table) return;
     const total = table.ids.size;
-    for (const name of order) {
+    for (const name of order.over) {
       const id = table.ids.get(name);
       if (id === undefined) continue;
       await this.obs.call("SetSceneItemIndex", { sceneName: scene, sceneItemId: id, sceneItemIndex: total - 1 });
+    }
+    for (const name of order.under) {
+      const id = table.ids.get(name);
+      if (id === undefined) continue;
+      await this.obs.call("SetSceneItemIndex", { sceneName: scene, sceneItemId: id, sceneItemIndex: 0 });
     }
   }
 
@@ -771,7 +776,7 @@ export class ObsTransport implements Transport {
     return { width: video.baseWidth, height: video.baseHeight };
   }
 
-  async liveEnsure(shell: string, sources: string[]) {
+  async liveEnsure(shell: string, sources: string[], under: string[] = []) {
     const scene = await this.ensureStaged(shell);
     await this.ensureScene(scene);
     const table = this.tables.get(scene) ?? (await this.loadTable(scene));
@@ -781,7 +786,7 @@ export class ObsTransport implements Transport {
       table.ids.set(name, res.sceneItemId);
       table.on.set(name, false);
     }
-    this.overlayOrder.set(scene, sources);
+    this.overlayOrder.set(scene, { over: sources.filter((n) => !under.includes(n)), under: sources.filter((n) => under.includes(n)) });
     await this.raise(scene);
   }
 
