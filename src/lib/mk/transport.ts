@@ -99,8 +99,11 @@ export interface Transport {
   getSources(): Promise<{ name: string; kind: "scene" | "input" }[]>;
   /** Persistent PIP assignment: put `source` into the "MK PIP n" scene (null = empty). Takes effect on air at once. */
   pipAssign(slot: number, source: string | null): Promise<void>;
-  /** Make sure `scene` has an (initially hidden) item for each source and stack them on top, first = lowest. */
-  liveEnsure(scene: string, sources: string[]): Promise<void>;
+  /**
+   * Make sure `scene` has an (initially hidden) item for each source and stack them on top, first = lowest.
+   * Names in `under` are sent to the very BOTTOM instead (the full-screen advertisement of the frame look).
+   */
+  liveEnsure(scene: string, sources: string[], under?: string[]): Promise<void>;
   /** The real on/off state of every item in `scene`, read from OBS (keyed by source name). */
   liveRead(scene: string): Promise<Record<string, boolean>>;
   /** Switch program to `scene` as a hard cut, whatever transition is selected. Keeps the selected transition. */
