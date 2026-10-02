@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Copy, Download, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { PlacePicker } from "@/components/mk/place-picker";
 import { fileToLogo, GFX_LAYERS, GFX_SCENE, layerUrl } from "@/lib/mk/graphics";
 import {
   exportJson,
@@ -45,14 +46,56 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function Corners({ value, onChange }: { value: Corner; onChange: (c: Corner) => void }) {
+/**
+ * Pick where a graphic sits: tap or drag on a mini screen (same picker as PIP / DSK in Settings),
+ * or use the corner list. Choosing a corner clears the hand-placed spot.
+ */
+function Place({
+  at,
+  corner,
+  onAt,
+  onCorner,
+  w,
+  h,
+  label = "Position — tap or drag",
+}: {
+  at: { x: number; y: number } | null;
+  corner?: Corner;
+  onAt: (at: { x: number; y: number } | null) => void;
+  onCorner?: (c: Corner) => void;
+  /** Rough width / height of the item as a share of the picture (for the little preview box). */
+  w: number;
+  h: number;
+  label?: string;
+}) {
   return (
-    <select className={field} value={value} onChange={(e) => onChange(e.target.value as Corner)}>
-      <option value="tl">Top left</option>
-      <option value="tr">Top right</option>
-      <option value="bl">Bottom left</option>
-      <option value="br">Bottom right</option>
-    </select>
+    <div className="col-span-2 grid gap-1.5">
+      <PlacePicker label={label} pos={at} size={w} height={h} onChange={(p) => onAt(p)} />
+      <div className="flex items-center gap-1.5">
+        {corner && onCorner && (
+          <select
+            className={field}
+            value={at ? "" : corner}
+            onChange={(e) => {
+              onCorner(e.target.value as Corner);
+              onAt(null);
+            }}
+            aria-label="Or pick a corner"
+          >
+            {at && <option value="">Custom spot</option>}
+            <option value="tl">Top left</option>
+            <option value="tr">Top right</option>
+            <option value="bl">Bottom left</option>
+            <option value="br">Bottom right</option>
+          </select>
+        )}
+        {at && (
+          <button type="button" className="mk-button h-8 shrink-0 rounded-[3px] px-2 text-[10px]" onClick={() => onAt(null)}>
+            RESET
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -335,9 +378,14 @@ function GraphicsPage() {
                       </span>
                     </Row>
                   </div>
-                  <Row label="Position">
-                    <Corners value={c.logo.pos} onChange={(pos) => edit("logo", { pos })} />
-                  </Row>
+                  <Place
+                    at={c.logo.at}
+                    corner={c.logo.pos}
+                    onCorner={(pos) => edit("logo", { pos })}
+                    onAt={(at) => edit("logo", { at })}
+                    w={c.logo.size / 100}
+                    h={(c.logo.size / 100) * (16 / 9) * 0.6}
+                  />
                   <Range label="Size" value={c.logo.size} min={3} max={60} onChange={(size) => edit("logo", { size })} />
                   <Range label="Opacity" value={c.logo.opacity} min={5} max={100} onChange={(opacity) => edit("logo", { opacity })} />
                 </>
@@ -345,6 +393,13 @@ function GraphicsPage() {
 
               {active === "lower" && (
                 <>
+                  <Place
+                    at={c.lower.at}
+                    onAt={(at) => edit("lower", { at })}
+                    w={Math.min(1, 0.42 * (c.lower.size / 100))}
+                    h={Math.min(1, 0.17 * (c.lower.size / 100))}
+                    label={c.lower.at ? "Position — tap or drag" : "Default spot (bottom left). Tap to place it yourself."}
+                  />
                   <Row label="Name">
                     <input className={field} value={c.lower.name} onChange={(e) => edit("lower", { name: e.target.value })} />
                   </Row>
@@ -414,19 +469,36 @@ function GraphicsPage() {
                     </select>
                   </Row>
                   <Row label="Bar position">
-                    <select className={field} value={c.ticker.pos} onChange={(e) => edit("ticker", { pos: e.target.value as "top" | "bottom" })}>
+                    <select
+                      className={field}
+                      value={c.ticker.at ? "" : c.ticker.pos}
+                      onChange={(e) => edit("ticker", { pos: e.target.value as "top" | "bottom", at: null })}
+                    >
+                      {c.ticker.at && <option value="">Custom height</option>}
                       <option value="bottom">Bottom</option>
                       <option value="top">Top</option>
                     </select>
                   </Row>
+                  <Place
+                    at={c.ticker.at}
+                    onAt={(at) => edit("ticker", { at })}
+                    w={1}
+                    h={0.07 * (c.ticker.size / 100)}
+                    label="Height on screen — tap or drag up / down"
+                  />
                 </>
               )}
 
               {active === "clock" && (
                 <>
-                  <Row label="Position">
-                    <Corners value={c.clock.pos} onChange={(pos) => edit("clock", { pos })} />
-                  </Row>
+                  <Place
+                    at={c.clock.at}
+                    corner={c.clock.pos}
+                    onCorner={(pos) => edit("clock", { pos })}
+                    onAt={(at) => edit("clock", { at })}
+                    w={0.17 * (c.clock.size / 100)}
+                    h={0.08 * (c.clock.size / 100)}
+                  />
                   <Row label="Font">
                     <Pick value={c.clock.font} list={GFX_FONTS} onChange={(font) => edit("clock", { font })} />
                   </Row>
@@ -450,9 +522,14 @@ function GraphicsPage() {
                   <Row label="Badge text">
                     <input className={field} value={c.badge.text} onChange={(e) => edit("badge", { text: e.target.value })} />
                   </Row>
-                  <Row label="Position">
-                    <Corners value={c.badge.pos} onChange={(pos) => edit("badge", { pos })} />
-                  </Row>
+                  <Place
+                    at={c.badge.at}
+                    corner={c.badge.pos}
+                    onCorner={(pos) => edit("badge", { pos })}
+                    onAt={(at) => edit("badge", { at })}
+                    w={0.14 * (c.badge.size / 100)}
+                    h={0.09 * (c.badge.size / 100)}
+                  />
                   <Row label="Style">
                     <Pick value={c.badge.style} list={BADGE_STYLES} onChange={(style) => edit("badge", { style })} />
                   </Row>
