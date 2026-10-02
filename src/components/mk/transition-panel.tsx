@@ -16,6 +16,8 @@ interface TransitionPanelProps {
   live: LiveState;
   pipScenes: (string | null)[];
   adScene: string | null;
+  /** Name of the selected Squeeze Merge preset. */
+  adName?: string | undefined;
   onPip: (slot: number) => void;
   onSqueezeMerge: () => void;
   onMove: (dir: SqueezeDir) => void;
@@ -44,6 +46,7 @@ export function TransitionPanel({
   live,
   pipScenes,
   adScene,
+  adName,
   onPip,
   onSqueezeMerge,
   onMove,
@@ -204,7 +207,7 @@ export function TransitionPanel({
             className={cn("mk-button flex h-8 min-w-0 flex-col items-center justify-center gap-[2px] rounded-[3px] px-0 text-[9px]", live.sqm && "mk-lit-program", fx.running && "mk-lit-amber")}
           >
             SQZ MERGE
-            <span className="max-w-full truncate font-mono text-[6px] font-normal opacity-70">{adScene ?? "no ad"}</span>
+            <span className="max-w-full truncate font-mono text-[6px] font-normal opacity-70">{adName ?? adScene ?? "no ad"}</span>
           </button>
         </div>
         <div className="grid grid-cols-5 items-center gap-1">
