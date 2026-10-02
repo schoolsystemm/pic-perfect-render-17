@@ -226,6 +226,10 @@ function Switcher() {
             pipScenes={state.config.pips.map((p) => p.scene)}
             adScene={state.config.ad.scene}
             adName={state.config.adPresets[state.config.adActive]?.name}
+            adPresets={state.config.adPresets}
+            adActive={state.config.adActive}
+            mergePresets={state.config.mergePresets}
+            mergeActive={state.config.mergeActive}
             onPip={(slot) => void engine.togglePip(slot)}
             onSqueezeMerge={() => void engine.squeezeMerge()}
             onMove={(dir) => void engine.moveTake(dir)}
