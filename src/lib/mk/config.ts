@@ -1,5 +1,5 @@
 // Local-only configuration persistence. OBS credentials never leave the device.
-import { AD_LAYOUTS, DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, PIP_CORNERS, SQUEEZE_DIRS, type AdConfig, type FxConfig, type PipSlot } from "./fx";
+import { AD_LAYOUTS, AD_STYLES, ANCHORS, DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, PIP_CORNERS, SQUEEZE_DIRS, type AdConfig, type FxConfig, type PipSlot } from "./fx";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -119,6 +119,9 @@ function mergeAd(raw: unknown): AdConfig {
   const r = (raw ?? {}) as Partial<AdConfig>;
   return {
     scene: typeof r.scene === "string" && r.scene ? r.scene : null,
+    look: r.look === "strip" ? "strip" : r.look === "frame" ? "frame" : DEFAULT_AD.look,
+    anchor: ANCHORS.includes(r.anchor as never) ? (r.anchor as AdConfig["anchor"]) : DEFAULT_AD.anchor,
+    style: AD_STYLES.some((x) => x.id === r.style) ? (r.style as AdConfig["style"]) : DEFAULT_AD.style,
     layout: AD_LAYOUTS.some((l) => l.id === r.layout) ? (r.layout as AdConfig["layout"]) : DEFAULT_AD.layout,
     size: typeof r.size === "number" ? Math.min(0.4, Math.max(0.15, r.size)) : DEFAULT_AD.size,
     fit: r.fit === "fill" ? "fill" : "fit",
