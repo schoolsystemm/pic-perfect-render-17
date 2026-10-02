@@ -9,9 +9,12 @@ import {
   FX_SCENE,
   LIVE_BUSES,
   PIP_SCENES,
+  adEase,
   ease,
   isLiveBus,
   isStage,
+  frameRest,
+  frameTargets,
   lerpRect,
   mergeFrame,
   moveFrame,
@@ -23,6 +26,7 @@ import {
   sqmTargets,
   squeezeFrame,
   type AdConfig,
+  type AdStyle,
   type FxConfig,
   type FxLayoutKind,
   type FxPair,
@@ -837,12 +841,12 @@ export class SwitcherEngine {
   }
 
   /** Runs `draw` from 0 to 1 over `ms`. Each frame waits for OBS to confirm the last one, so it never piles up. */
-  private async fxAnimate(ms: number, draw: (eased: number) => Promise<void>, onRaw?: (raw: number) => void) {
+  private async fxAnimate(ms: number, draw: (eased: number) => Promise<void>, onRaw?: (raw: number) => void, easing: (t: number) => number = ease) {
     const start = performance.now();
     for (;;) {
       const raw = Math.min(1, (performance.now() - start) / Math.max(1, ms));
       onRaw?.(raw);
-      await draw(ease(raw));
+      await draw(easing(raw));
       if (raw >= 1) return;
       await new Promise((r) => setTimeout(r, 12));
     }
@@ -1015,10 +1019,26 @@ export class SwitcherEngine {
 
   private adTargets(cfg: AdConfig = this.state.config.ad) {
     const { w, h } = this.live ?? { w: 1920, h: 1080 };
-    const end = sqmTargets(cfg.layout, cfg.size, w, h);
-    const rest = sqmRest(cfg.layout, cfg.size, w, h);
     const fill = cfg.fit === "fill";
+    const end = cfg.look === "frame" ? frameTargets(cfg.anchor, cfg.size, w, h) : sqmTargets(cfg.layout, cfg.size, w, h);
+    const rest = cfg.look === "frame" ? frameRest(w, h) : sqmRest(cfg.layout, cfg.size, w, h);
     return { end: { main: end.main, ad: { ...end.ad, fill } }, rest: { main: rest.main, ad: { ...rest.ad, fill } } };
+  }
+
+  /** Items that must sit UNDER the cams: the full-screen advertisement of the frame look. */
+  private adUnder(): string[] {
+    const ad = this.state.config.ad;
+    return ad.scene && ad.look === "frame" ? [ad.scene] : [];
+  }
+
+  /** Runs an advertisement move in the chosen style ("cut" = no animation, straight to the end). */
+  private async adAnimate(ms: number, style: AdStyle, draw: (e: number) => Promise<void>, onRaw?: (raw: number) => void) {
+    if (style === "cut") {
+      onRaw?.(1);
+      await draw(1);
+      return;
+    }
+    await this.fxAnimate(ms, draw, onRaw, adEase(style));
   }
 
   /** Where the program picture sits right now: full screen, or squeezed while the advertisement is in. */
@@ -1102,8 +1122,8 @@ export class SwitcherEngine {
       const { width, height } = await t.fxStage(cams, prog, prog, A);
       await t.fxStage(cams, prev, prev, B);
       const overlays = this.overlaySources();
-      await t.liveEnsure(A, overlays);
-      await t.liveEnsure(B, overlays);
+      await t.liveEnsure(A, overlays, this.adUnder());
+      await t.liveEnsure(B, overlays, this.adUnder());
       this.live = { mains: { [A]: prog, [B]: prev }, w: width, h: height };
       await this.liveDrawMain(A, prog, FULL_RECT);
       await this.liveDrawMain(B, prev, FULL_RECT);
@@ -1166,8 +1186,8 @@ export class SwitcherEngine {
       const { width, height } = await t.fxStage(cams, mainA, mainA, A);
       await t.fxStage(cams, mainB, mainB, B);
       const overlays = this.overlaySources();
-      await t.liveEnsure(A, overlays);
-      await t.liveEnsure(B, overlays);
+      await t.liveEnsure(A, overlays, this.adUnder());
+      await t.liveEnsure(B, overlays, this.adUnder());
       this.live = { mains: { [A]: mainA, [B]: mainB }, w: width, h: height };
       const cur = bus === A ? ra : rb;
       const ad = this.state.config.ad.scene;
@@ -1212,8 +1232,8 @@ export class SwitcherEngine {
       if (turningOn) {
         await t.pipAssign(slot, cfg.scene);
         const overlays = this.overlaySources();
-        await t.liveEnsure(bus, overlays);
-        await t.liveEnsure(this.otherBus(bus), overlays);
+        await t.liveEnsure(bus, overlays, this.adUnder());
+        await t.liveEnsure(this.otherBus(bus), overlays, this.adUnder());
       }
       await this.fxAnimate(ms, (e) => t.fxFrame({ [name]: pipAt(cfg.corner, cfg.size, turningOn ? e : 1 - e, live.w, live.h) }, bus));
       const rest = turningOn ? pipRect(cfg.corner, cfg.size, live.w, live.h) : null;
@@ -1310,11 +1330,12 @@ export class SwitcherEngine {
     this.set({ fx: { running: true, layout: null }, transitioning: true, tBar: 0 });
     try {
       const overlays = this.overlaySources();
-      await t.liveEnsure(bus, overlays);
-      await t.liveEnsure(this.otherBus(bus), overlays);
+      await t.liveEnsure(bus, overlays, this.adUnder());
+      await t.liveEnsure(this.otherBus(bus), overlays, this.adUnder());
       await t.fxFrame({ [ad.scene]: from.ad }, bus);
-      await this.fxAnimate(
+      await this.adAnimate(
         ms,
+        ad.style,
         (e) => t.fxFrame({ [cam]: lerpRect(from.main, to.main, e), [ad.scene as string]: lerpRect(from.ad, to.ad, e) }, bus),
         (raw) => this.set({ tBar: raw }),
       );
@@ -1365,8 +1386,8 @@ export class SwitcherEngine {
             await t.fxFrame({ [prev.scene]: null }, LIVE_BUSES[1]);
           }
           const overlays = this.overlaySources();
-          await t.liveEnsure(LIVE_BUSES[0], overlays);
-          await t.liveEnsure(LIVE_BUSES[1], overlays);
+          await t.liveEnsure(LIVE_BUSES[0], overlays, this.adUnder());
+          await t.liveEnsure(LIVE_BUSES[1], overlays, this.adUnder());
           if (wasIn && patch.scene) {
             const rect = this.adTargets(next).end.ad;
             await t.fxFrame({ [patch.scene]: rect }, LIVE_BUSES[0]);
@@ -1381,7 +1402,17 @@ export class SwitcherEngine {
       return;
     }
     const live = this.live;
-    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit)) {
+    // Frame <-> strip changes which layer is on top: re-stack both buses before anything moves.
+    if (live && patch.look !== undefined && patch.look !== prev.look && !this.state.fx.running) {
+      try {
+        const overlays = this.overlaySources();
+        await t.liveEnsure(LIVE_BUSES[0], overlays, this.adUnder());
+        await t.liveEnsure(LIVE_BUSES[1], overlays, this.adUnder());
+      } catch {
+        this.notice("Advertisement: OBS did not apply the look");
+      }
+    }
+    if (live && this.state.live.sqm && prev.scene && !this.state.fx.running && (patch.layout || patch.size || patch.fit || patch.look || patch.anchor)) {
       const bus = this.progBus();
       const cam = live.mains[bus];
       const a = this.adTargets(prev).end;
@@ -1390,7 +1421,7 @@ export class SwitcherEngine {
       if (!cam) return;
       this.set({ fx: { running: true, layout: null } });
       try {
-        await this.fxAnimate(500, (e) => t.fxFrame({ [cam]: lerpRect(a.main, b.main, e), [adName]: lerpRect(a.ad, b.ad, e) }, bus));
+        await this.adAnimate(500, next.style, (e) => t.fxFrame({ [cam]: lerpRect(a.main, b.main, e), [adName]: lerpRect(a.ad, b.ad, e) }, bus));
         await t.fxFrame({ [cam]: b.main, [adName]: b.ad }, bus);
         await this.liveSyncFree();
       } catch {
