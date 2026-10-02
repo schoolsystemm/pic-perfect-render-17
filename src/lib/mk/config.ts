@@ -15,6 +15,7 @@ import {
   type PipSlot,
   type PlacePos,
 } from "./fx";
+import { DEFAULT_MERGE, cleanMerge, type MergePreset } from "./merge";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -176,6 +177,22 @@ function mergeAd(raw: unknown): AdConfig {
   };
 }
 
+function mergeMergePresets(raw: unknown): { mergePresets: MergePreset[]; mergeActive: number } {
+  const list = Array.isArray(raw) ? raw : [];
+  const mergePresets: MergePreset[] = list
+    .filter((p) => !!p && typeof p === "object")
+    .slice(0, 24)
+    .map((p, i) => {
+      const r = p as Partial<MergePreset>;
+      return {
+        name: typeof r.name === "string" && r.name.trim() ? r.name.slice(0, 32) : `Split ${i + 1}`,
+        merge: cleanMerge(r.merge),
+      };
+    });
+  if (!mergePresets.length) mergePresets.push({ name: "Split 2", merge: DEFAULT_MERGE });
+  return { mergePresets, mergeActive: 0 };
+}
+
 function mergeAdPresets(
   raw: unknown,
   current: AdConfig,
@@ -251,6 +268,15 @@ export function loadConfig(): MkConfig {
             : 0;
         // The working copy always matches the selected preset.
         return { adPresets: merged.adPresets, adActive: active, ad: merged.adPresets[active]!.ad };
+      })(),
+      ...(() => {
+        const p = parsed as { mergePresets?: unknown; mergeActive?: unknown };
+        const merged = mergeMergePresets(p.mergePresets);
+        const active =
+          typeof p.mergeActive === "number" && p.mergeActive >= 0 && p.mergeActive < merged.mergePresets.length
+            ? Math.floor(p.mergeActive)
+            : 0;
+        return { mergePresets: merged.mergePresets, mergeActive: active };
       })(),
       hiddenAudio: Array.isArray(parsed.hiddenAudio)
         ? parsed.hiddenAudio.filter((n): n is string => typeof n === "string")

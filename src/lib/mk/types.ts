@@ -2,6 +2,7 @@
 // Kept free of UI and transport concerns so the same contracts can later back a
 // physical MK VISION PANEL hardware interface.
 
+import { DEFAULT_MERGE, type MergePreset } from "./merge";
 import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type AdPreset, type DskPlace, type FxConfig, type FxLayoutKind, type PipSlot, type PlacePos } from "./fx";
 
 export const CAM_COUNT = 8;
@@ -220,6 +221,9 @@ export interface MkConfig {
   /** Every Squeeze Merge made in Settings; the live screen just picks one from a drop-down. Always at least one. */
   adPresets: AdPreset[];
   adActive: number;
+  /** Split-screen Merge looks (2..6 panes + borders), picked on the live screen, set up and saved in the Merge editor. Always at least one. */
+  mergePresets: MergePreset[];
+  mergeActive: number;
 }
 
 /** What the live compositor is doing in OBS right now (confirmed from OBS, not assumed). */
@@ -230,12 +234,16 @@ export interface LiveState {
   pip: boolean[];
   /** Squeeze Merge is in (advertisement showing). */
   sqm: boolean;
+  /** Split-screen Merge is showing (panes + borders in the live buses; PIPs / DSKs / the ad ride on top). */
+  merge: boolean;
+  /** The scene shown in each pane right now (only while `merge`). */
+  mergeScenes: string[];
   /** OBS scene names of the program / preview bus (for the monitors). */
   progBus: string | null;
   previewBus: string | null;
 }
 
-export const IDLE_LIVE: LiveState = { on: false, pip: [false, false], sqm: false, progBus: null, previewBus: null };
+export const IDLE_LIVE: LiveState = { on: false, pip: [false, false], sqm: false, merge: false, mergeScenes: [], progBus: null, previewBus: null };
 
 export interface RundownItem {
   text: string;
@@ -306,6 +314,8 @@ export const DEFAULT_CONFIG: MkConfig = {
   ad: DEFAULT_AD,
   adPresets: [{ name: "Squeeze Merge 1", ad: DEFAULT_AD }],
   adActive: 0,
+  mergePresets: [{ name: "Split 2", merge: DEFAULT_MERGE }],
+  mergeActive: 0,
 };
 
 export interface SwitcherState {

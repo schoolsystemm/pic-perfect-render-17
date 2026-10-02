@@ -37,6 +37,15 @@ import {
   type PipSlot,
   type SqueezeDir,
 } from "./fx";
+import {
+  MERGE_BG,
+  MERGE_PANES,
+  cleanMerge,
+  mergeLayoutById,
+  mergeRects,
+  resolvePaneScenes,
+  type MergeConfig,
+} from "./merge";
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import type { Transport, TransportEvent } from "./transport";
@@ -119,6 +128,8 @@ export class SwitcherEngine {
   private tbarHeld = false;
   private booted = false;
   /** While PiP / Merge is held on air: the two scenes involved and the canvas size. */
+  /** The merge helper scenes (pane scenes + border colour) exist in OBS, so the buses may hold their items. */
+  private mergeReady = false;
   private fxHold: { a: string; b: string; w: number; h: number } | null = null;
   /** While OBS program is an MK LIVE bus: which cam scene each bus shows, and the canvas size. */
   private live: { mains: Record<string, string>; w: number; h: number } | null = null;
@@ -243,6 +254,7 @@ export class SwitcherEngine {
     await this.teardown();
     this.fxHold = null;
     this.live = null;
+    this.mergeReady = false;
     this.recovering = false;
     this.set({ fx: { running: false, layout: null }, live: IDLE_LIVE });
     const { demoMode, host, port, password } = this.state.config;
@@ -329,7 +341,7 @@ export class SwitcherEngine {
         break;
       }
       case "scenes":
-        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !isStage(n) && !(PIP_SCENES as string[]).includes(n)) });
+        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !isStage(n) && !(PIP_SCENES as string[]).includes(n) && !(MERGE_PANES as string[]).includes(n) && n !== MERGE_BG) });
         break;
       case "transitions":
         this.set({ transitions: event.transitions });
@@ -889,6 +901,10 @@ export class SwitcherEngine {
    */
   private async pairEffect(label: string, at: (t: number, W: number, H: number) => FxPair) {
     if (this.fxGuard()) return;
+    if (this.state.live.merge) {
+      this.notice("Turn MERGE off first, then use SQUEEZE / MOVE");
+      return;
+    }
     const pair = this.fxScenes();
     const t = this.transport;
     if (!pair || !t) return;
@@ -940,6 +956,8 @@ export class SwitcherEngine {
 
   /** PiP / Merge: tap to bring it on (PVW cam as inset / right half over PGM), tap again to take it off. */
   async toggleLayout(kind: FxLayoutKind) {
+    // Split-screen Merge now lives in the live buses (2..6 panes, borders, PIP / DSK / ad on top).
+    if (kind === "merge") return this.toggleMerge();
     const { running, layout } = this.state.fx;
     if (running) return;
     if (this.live) {
@@ -1066,7 +1084,8 @@ export class SwitcherEngine {
   private overlaySources(): string[] {
     const { ad, dsks } = this.state.config;
     const dskSources = dsks.map((d) => d.source).filter((n): n is string => !!n && n !== ad.scene && !this.fxCams().includes(n));
-    return [...new Set([...(ad.scene ? [ad.scene] : []), ...PIP_SCENES, ...dskSources])];
+    const merge = this.mergeReady ? [MERGE_BG, ...MERGE_PANES] : [];
+    return [...new Set([...(ad.scene ? [ad.scene] : []), ...merge, ...PIP_SCENES, ...dskSources])];
   }
 
   /** Where a DSK that rides in the bus sits, inside `region` (the squeezed picture area, or the whole screen). */
@@ -1091,12 +1110,15 @@ export class SwitcherEngine {
     this.state.config.dsks.forEach((d, i) => {
       if (d.source && this.dskBus[i] && this.state.dskActive[i]) out[d.source] = this.dskRect(i, region);
     });
+    Object.assign(out, this.mergeItems(region));
     return out;
   }
 
   private async liveDrawMain(bus: string, cam: string, region: FxRect = this.mainRegion()) {
     const frame: Record<string, FxRect | null> = {};
-    for (const c of this.fxCams()) frame[c] = c === cam ? region : null;
+    // While the split-screen Merge is showing, the single main picture is hidden (the panes take its place).
+    const merged = this.state.live.merge;
+    for (const c of this.fxCams()) frame[c] = c === cam && !merged ? region : null;
     await this.transport?.fxFrame(frame, bus);
   }
 
@@ -1113,6 +1135,7 @@ export class SwitcherEngine {
     dsks.forEach((d, i) => {
       if (d.source && this.dskBus[i]) frame[d.source] = this.state.dskActive[i] ? this.dskRect(i, region) : null;
     });
+    Object.assign(frame, this.mergeItems(region));
     if (ad.scene) frame[ad.scene] = this.state.live.sqm ? this.adTargets().end.ad : null;
     await this.transport?.fxFrame(frame, bus);
   }
@@ -1167,6 +1190,7 @@ export class SwitcherEngine {
       for (let i = 0; i < PIP_SCENES.length; i++) await t.pipAssign(i, this.state.config.pips[i]?.scene ?? null);
       const { width, height } = await t.fxStage(cams, prog, prog, A);
       await t.fxStage(cams, prev, prev, B);
+      await this.prepareMerge(this.activeMerge().color);
       const overlays = this.overlaySources();
       await t.liveEnsure(A, overlays, this.adUnder());
       await t.liveEnsure(B, overlays, this.adUnder());
@@ -1175,7 +1199,7 @@ export class SwitcherEngine {
       await this.liveDrawMain(B, prev, FULL_RECT);
       await t.fxCutTo(A);
       await t.setPreviewScene(B);
-      this.setLive({ on: true, pip: [false, false], sqm: false, progBus: A, previewBus: B });
+      this.setLive({ on: true, pip: [false, false], sqm: false, merge: false, mergeScenes: [], progBus: A, previewBus: B });
       await this.dskToBus(A, B);
       return true;
     } catch (error) {
@@ -1217,7 +1241,7 @@ export class SwitcherEngine {
 
   private async maybeExitLive() {
     const { live, fx, transitioning } = this.state;
-    if (this.live && !fx.running && !transitioning && !live.sqm && !live.pip.some(Boolean)) await this.exitLive();
+    if (this.live && !fx.running && !transitioning && !live.sqm && !live.merge && !live.pip.some(Boolean)) await this.exitLive();
   }
 
   /** OBS was already on a live bus when we connected: rebuild the controller's live state from OBS. */
@@ -1235,12 +1259,14 @@ export class SwitcherEngine {
       const mainB = pick(rb);
       const { width, height } = await t.fxStage(cams, mainA, mainA, A);
       await t.fxStage(cams, mainB, mainB, B);
+      await this.prepareMerge(this.activeMerge().color);
       const overlays = this.overlaySources();
       await t.liveEnsure(A, overlays, this.adUnder());
       await t.liveEnsure(B, overlays, this.adUnder());
       this.live = { mains: { [A]: mainA, [B]: mainB }, w: width, h: height };
       const cur = bus === A ? ra : rb;
       const ad = this.state.config.ad.scene;
+      const mergeOn = !!cur[MERGE_BG];
       const main = bus === A ? mainA : mainB;
       const dskActive = [...this.state.dskActive];
       this.state.config.dsks.forEach((d, i) => {
@@ -1253,7 +1279,15 @@ export class SwitcherEngine {
       this.set({
         programScene: main,
         program: this.camForScene(main),
-        live: { on: true, pip: PIP_SCENES.map((n) => !!cur[n]), sqm: !!(ad && cur[ad]), progBus: bus, previewBus: this.otherBus(bus) },
+        live: {
+          on: true,
+          pip: PIP_SCENES.map((n) => !!cur[n]),
+          sqm: !!(ad && cur[ad]),
+          merge: mergeOn,
+          mergeScenes: mergeOn ? resolvePaneScenes(this.activeMerge(), cams, main, bus === A ? mainB : mainA) : [],
+          progBus: bus,
+          previewBus: this.otherBus(bus),
+        },
       });
       void t.resync().catch(() => {});
     } catch {
@@ -1315,6 +1349,176 @@ export class SwitcherEngine {
       this.set({ fx: { running: false, layout: null } });
     }
     await this.maybeExitLive();
+  }
+
+  // ------------------------------------------------------------ split-screen Merge (2..6 panes + borders)
+  // The panes are real OBS scene items in the live buses (one wrapper scene per pane, a colour scene under them for the
+  // borders), so PIP 1 / PIP 2, the DSKs and Squeeze Merge all keep working on top of it, through every take.
+
+  private activeMerge(): MergeConfig {
+    const { mergePresets, mergeActive } = this.state.config;
+    return (mergePresets[mergeActive] ?? mergePresets[0])!.merge;
+  }
+
+  /** Create the merge helper scenes in OBS (once per connection). Throws when `strict` and OBS refuses. */
+  private async prepareMerge(color: string, strict = false) {
+    const t = this.transport;
+    if (!t) return;
+    try {
+      await t.mergePrepare(color);
+      this.mergeReady = true;
+    } catch (error) {
+      this.mergeReady = false;
+      if (strict) throw error;
+    }
+  }
+
+  /** Border colour + pane rectangles at progress `t`, placed inside `region`. Null = hidden. */
+  private mergeItemsAt(cfg: MergeConfig, region: FxRect, t: number): Record<string, FxRect | null> {
+    const live = this.live;
+    const out: Record<string, FxRect | null> = {};
+    if (!live || !this.mergeReady) return out;
+    const r = mergeRects(cfg, live.w, live.h, t);
+    out[MERGE_BG] = r.bg ? placeIn(r.bg, region) : null;
+    MERGE_PANES.forEach((name, i) => {
+      const pane = r.panes[i];
+      out[name] = pane ? placeIn(pane, region) : null;
+    });
+    return out;
+  }
+
+  /** The merge items as they rest now: fully in while Merge is showing, hidden otherwise. */
+  private mergeItems(region: FxRect): Record<string, FxRect | null> {
+    return this.mergeItemsAt(this.activeMerge(), region, this.state.live.merge ? 1 : 0);
+  }
+
+  /** Put the right scene in each pane and make sure both buses hold the pane items. */
+  private async applyMergePanes(cfg: MergeConfig, scenes: string[]) {
+    const t = this.transport;
+    if (!t || !this.live) return;
+    await this.prepareMerge(cfg.color, true);
+    const n = mergeLayoutById(cfg.layout).panes;
+    for (let i = 0; i < MERGE_PANES.length; i++) await t.paneAssign(i, i < n ? scenes[i] || null : null);
+    const overlays = this.overlaySources();
+    const bus = this.progBus();
+    await t.liveEnsure(bus, overlays, this.adUnder());
+    await t.liveEnsure(this.otherBus(bus), overlays, this.adUnder());
+  }
+
+  /** MERGE button: panes grow in over the picture (PIP / DSK / ad stay on top); tap again and they go away. */
+  async toggleMerge() {
+    if (this.state.fx.running) return;
+    if (this.state.fx.layout) {
+      this.notice(`Close ${this.state.fx.layout.toUpperCase()} first`);
+      return;
+    }
+    const turningOn = !this.state.live.merge;
+    const cams = this.fxCams();
+    if (turningOn && !cams.length) {
+      this.notice("Merge: map your cams to OBS scenes in Settings first");
+      return;
+    }
+    if (turningOn && !this.live && !(await this.enterLive())) return;
+    const t = this.transport;
+    const live = this.live;
+    if (!t || !live) return;
+    const cfg = this.activeMerge();
+    const bus = this.progBus();
+    const cam = live.mains[bus];
+    if (!cam) return;
+    const scenes = turningOn ? resolvePaneScenes(cfg, cams, this.state.programScene, this.state.previewScene) : this.state.live.mergeScenes;
+    const ms = Math.max(350, Math.min(1500, this.state.config.transitionDuration));
+    this.set({ fx: { running: true, layout: null }, transitioning: true, tBar: 0 });
+    try {
+      if (turningOn) await this.applyMergePanes(cfg, scenes);
+      const region = this.mainRegion();
+      await this.adAnimate(
+        ms,
+        cfg.style,
+        (e) => t.fxFrame({ [cam]: region, ...this.mergeItemsAt(cfg, region, turningOn ? e : 1 - e) }, bus),
+        (raw) => this.set({ tBar: raw }),
+      );
+      this.setLive({ merge: turningOn, mergeScenes: turningOn ? scenes : [] });
+      await t.fxFrame({ [cam]: turningOn ? null : region, ...this.mergeItems(region) }, bus);
+      await this.liveSyncFree();
+      const real = await t.liveRead(bus);
+      const on = !!real[MERGE_BG];
+      this.setLive({ merge: on, mergeScenes: on ? scenes : [] });
+      if (on !== turningOn) this.notice("Merge: OBS did not apply it");
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`Merge: OBS did not apply it${why}`);
+      const real = await t.liveRead(bus).catch(() => null);
+      if (real) this.setLive({ merge: !!real[MERGE_BG], mergeScenes: real[MERGE_BG] ? scenes : [] });
+    } finally {
+      this.set({ fx: { running: false, layout: null }, tBar: 0, transitioning: false });
+    }
+    await this.maybeExitLive();
+  }
+
+  /** The merge on air follows an edited / newly picked preset at once (hard change, nothing glides). */
+  private async redrawMerge() {
+    const t = this.transport;
+    const live = this.live;
+    if (!t || !live || !this.state.live.merge || this.state.fx.running) return;
+    const cfg = this.activeMerge();
+    const scenes = resolvePaneScenes(cfg, this.fxCams(), this.state.programScene, this.state.previewScene);
+    this.set({ fx: { running: true, layout: null } });
+    try {
+      await this.applyMergePanes(cfg, scenes);
+      this.setLive({ mergeScenes: scenes });
+      await this.liveDrawOverlays(this.progBus());
+      await this.liveSyncFree();
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`Merge: OBS did not apply the change${why}`);
+    } finally {
+      this.set({ fx: { running: false, layout: null } });
+    }
+  }
+
+  // ---- merge presets (made in the Merge editor, picked on the live screen, kept across reloads)
+
+  async selectMergePreset(index: number) {
+    const { mergePresets, mergeActive } = this.state.config;
+    if (!mergePresets[index] || index === mergeActive) return;
+    this.updateConfig({ mergeActive: index });
+    await this.redrawMerge();
+  }
+
+  /** SAVE: name + every setting of one preset. If it is the one in use, what is on air follows. */
+  async saveMergePreset(index: number, name: string, merge: MergeConfig) {
+    const { mergePresets, mergeActive } = this.state.config;
+    if (!mergePresets[index]) return;
+    const nm = name.trim().slice(0, 32) || mergePresets[index]!.name;
+    const clean = cleanMerge(merge);
+    this.updateConfig({ mergePresets: mergePresets.map((p, i) => (i === index ? { name: nm, merge: clean } : p)) });
+    this.notice(`Merge "${nm}" saved`);
+    if (index === mergeActive) await this.redrawMerge();
+  }
+
+  /** SAVE AS NEW: a new preset from the editor's settings, selected straight away. */
+  async saveMergePresetAs(name: string, merge: MergeConfig): Promise<number> {
+    const { mergePresets } = this.state.config;
+    const n = mergePresets.length;
+    if (n >= 24) {
+      this.notice("Up to 24 Merge presets");
+      return this.state.config.mergeActive;
+    }
+    const nm = (name.trim() || `Split ${n + 1}`).slice(0, 32);
+    this.updateConfig({ mergePresets: [...mergePresets, { name: nm, merge: cleanMerge(merge) }] });
+    this.notice(`Merge "${nm}" saved`);
+    await this.selectMergePreset(n);
+    return n;
+  }
+
+  async removeMergePreset(index: number) {
+    const { mergePresets, mergeActive } = this.state.config;
+    if (mergePresets.length <= 1 || !mergePresets[index]) return;
+    const list = mergePresets.filter((_, i) => i !== index);
+    const next = index === mergeActive ? 0 : mergeActive > index ? mergeActive - 1 : mergeActive;
+    this.updateConfig({ mergePresets: list, mergeActive: next });
+    if (index === mergeActive) await this.redrawMerge();
   }
 
   /** Assign a scene to PIP n. It stays there until changed; if the PIP is on air OBS swaps it live. */
@@ -1401,12 +1605,12 @@ export class SwitcherEngine {
         ad.style,
         (e) => {
           const region = lerpRect(from.main, to.main, e);
-          return t.fxFrame({ [cam]: region, [ad.scene as string]: lerpRect(from.ad, to.ad, e), ...this.overlayFrame(region) }, bus);
+          return t.fxFrame({ [cam]: this.state.live.merge ? null : region, [ad.scene as string]: lerpRect(from.ad, to.ad, e), ...this.overlayFrame(region) }, bus);
         },
         (raw) => this.set({ tBar: raw }),
       );
       this.setLive({ sqm: turningOn });
-      await t.fxFrame({ [cam]: this.mainRegion(), [ad.scene]: turningOn ? end.ad : null, ...this.overlayFrame(this.mainRegion()) }, bus);
+      await t.fxFrame({ [cam]: this.state.live.merge ? null : this.mainRegion(), [ad.scene]: turningOn ? end.ad : null, ...this.overlayFrame(this.mainRegion()) }, bus);
       await this.liveSyncFree();
       const real = await t.liveRead(bus);
       const on = !!real[ad.scene];
@@ -1550,6 +1754,31 @@ export class SwitcherEngine {
       return;
     }
     this.updateConfig({ adPresets: adPresets.map((p, i) => (i === index ? { ...p, ad: { ...p.ad, ...patch } } : p)) });
+  }
+
+  /** SAVE from the Transitions editor: name + every setting of one preset, kept across reloads. Glides on air if it is the one in use. */
+  async saveAdPreset(index: number, name: string, ad: AdConfig) {
+    const { adPresets } = this.state.config;
+    if (!adPresets[index]) return;
+    const nm = name.trim().slice(0, 32) || adPresets[index]!.name;
+    this.updateConfig({ adPresets: this.state.config.adPresets.map((p, i) => (i === index ? { ...p, name: nm } : p)) });
+    await this.editAdPreset(index, { ...ad });
+    this.notice(`Squeeze Merge "${nm}" saved`);
+  }
+
+  /** SAVE AS NEW: a new preset made from the editor's settings; selected straight away when nothing is on air. */
+  async saveAdPresetAs(name: string, ad: AdConfig): Promise<number> {
+    const { adPresets } = this.state.config;
+    const n = adPresets.length;
+    if (n >= 24) {
+      this.notice("Up to 24 Squeeze Merge presets");
+      return this.state.config.adActive;
+    }
+    const nm = (name.trim() || `Squeeze Merge ${n + 1}`).slice(0, 32);
+    this.updateConfig({ adPresets: [...adPresets, { name: nm, ad: { ...ad } }] });
+    this.notice(`Squeeze Merge "${nm}" saved`);
+    await this.selectAdPreset(n);
+    return n;
   }
 
   async removeAdPreset(index: number) {

@@ -128,14 +128,19 @@ export function tallyOf(s: {
   program: number | null;
   preview: number | null;
   fx: { layout: string | null };
-  live: { pip: boolean[] };
+  live: { pip: boolean[]; merge?: boolean; mergeScenes?: string[] };
   config: { camScenes: (string | null)[]; pips: { scene: string | null }[] };
 }): { pgm: number[]; pvw: number[] } {
   const pgm = new Set<number>();
   const pvw = new Set<number>();
-  if (s.program !== null) pgm.add(s.program);
-  // A held Merge shows PGM and PVW side by side: both are on air.
-  if (s.fx.layout === "merge" && s.preview !== null) pgm.add(s.preview);
+  if (s.program !== null && !s.live.merge) pgm.add(s.program);
+  // A showing Merge puts every pane's cam on air.
+  if (s.live.merge) {
+    for (const scene of s.live.mergeScenes ?? []) {
+      const cam = s.config.camScenes.indexOf(scene);
+      if (cam >= 0) pgm.add(cam);
+    }
+  }
   // PIPs that are showing put their camera on air too.
   s.config.pips.forEach((p, i) => {
     if (!s.live.pip[i] || !p.scene) return;

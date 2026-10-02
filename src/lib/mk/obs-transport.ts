@@ -3,6 +3,7 @@ import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
 import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
+import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
 import { GFX_SCENE } from "./graphics";
 import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
 
@@ -875,16 +876,56 @@ export class ObsTransport implements Transport {
   async pipAssign(slot: number, source: string | null) {
     const wrapper = PIP_SCENES[slot];
     if (!wrapper) return;
+    await this.assignWrapper(wrapper, source);
+  }
+
+  async paneAssign(slot: number, source: string | null) {
+    const wrapper = MERGE_PANES[slot];
+    if (!wrapper) return;
+    await this.assignWrapper(wrapper, source);
+  }
+
+  /** A wrapper scene holds exactly the one scene / source assigned to it (PIP n, merge pane n). */
+  private async assignWrapper(wrapper: string, source: string | null) {
     await this.ensureScene(wrapper);
     const list = await this.obs.call("GetSceneItemList", { sceneName: wrapper });
     const items = list.sceneItems;
     if (source && items.length === 1 && String(items[0]?.["sourceName"]) === source) return;
     if (!source && items.length === 0) return;
     if (source) {
-      // Add the new one first: if OBS refuses (e.g. it would nest a scene inside itself) the old PIP stays.
+      // Add the new one first: if OBS refuses (e.g. it would nest a scene inside itself) the old one stays.
       await this.obs.call("CreateSceneItem", { sceneName: wrapper, sourceName: source, sceneItemEnabled: true });
     }
     for (const it of items) await this.obs.call("RemoveSceneItem", { sceneName: wrapper, sceneItemId: Number(it["sceneItemId"]) });
+  }
+
+  async mergePrepare(color: string) {
+    const video = await this.obs.call("GetVideoSettings");
+    await this.ensureScene(MERGE_BG);
+    for (const pane of MERGE_PANES) await this.ensureScene(pane);
+    const settings = { color: obsColor(color), width: video.baseWidth, height: video.baseHeight };
+    let exists = true;
+    try {
+      await this.obs.call("GetInputSettings", { inputName: MERGE_COLOR_INPUT });
+    } catch {
+      exists = false;
+    }
+    if (exists) {
+      await this.obs.call("SetInputSettings", { inputName: MERGE_COLOR_INPUT, inputSettings: settings, overlay: true });
+      try {
+        await this.obs.call("GetSceneItemId", { sceneName: MERGE_BG, sourceName: MERGE_COLOR_INPUT });
+      } catch {
+        await this.obs.call("CreateSceneItem", { sceneName: MERGE_BG, sourceName: MERGE_COLOR_INPUT, sceneItemEnabled: true });
+      }
+    } else {
+      await this.obs.call("CreateInput", {
+        sceneName: MERGE_BG,
+        inputName: MERGE_COLOR_INPUT,
+        inputKind: "color_source_v3",
+        inputSettings: settings,
+        sceneItemEnabled: true,
+      });
+    }
   }
 
   async fxFrame(frame: Record<string, FxRect | null>, shell: string = FX_SCENE) {
