@@ -98,6 +98,22 @@ export const LIVE_BUSES: [string, string] = ["MK LIVE A", "MK LIVE B"];
 export const PIP_SCENES: [string, string] = ["MK PIP 1", "MK PIP 2"];
 export const isLiveBus = (name: string | null | undefined) => !!name && LIVE_BUSES.includes(name);
 
+// ---------------------------------------------------------------------------------------------
+// STAGE scenes. OBS Studio Mode (the ⋮ menu beside "Transition" → "Duplicate Scene", ON by default) puts a
+// private COPY of the scene on program when you take it. Moving / showing / hiding items of that scene
+// afterwards changes the original (the controller's screenshot shows it) but NOT the copy on air.
+// So MK never animates the on-air scene itself: "MK LIVE A", "MK LIVE B" and "MK FX" are thin shells that
+// hold ONE nested item, their STAGE scene, and all the animation happens inside the stage. A nested scene is
+// shared with the copy, so every change reaches program whatever the Studio Mode settings are.
+// ---------------------------------------------------------------------------------------------
+const STAGE_SUFFIX = " STAGE";
+/** The scene whose items MK really moves for a shell scene ("MK LIVE A" -> "MK LIVE A STAGE"); other scenes map to themselves. */
+export const stageOf = (scene: string) => (scene === FX_SCENE || LIVE_BUSES.includes(scene) ? `${scene}${STAGE_SUFFIX}` : scene);
+/** Inverse of stageOf: the shell scene that is on air for a stage scene. */
+export const shellOf = (scene: string) =>
+  scene.endsWith(STAGE_SUFFIX) && stageOf(scene.slice(0, -STAGE_SUFFIX.length)) === scene ? scene.slice(0, -STAGE_SUFFIX.length) : scene;
+export const isStage = (name: string | null | undefined) => !!name && shellOf(name) !== name;
+
 export interface PipSlot {
   /** Scene assigned to this PIP. Stays until the operator changes it. */
   scene: string | null;
