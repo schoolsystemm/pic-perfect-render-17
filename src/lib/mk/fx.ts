@@ -130,21 +130,52 @@ export const AD_LAYOUTS: { id: AdLayout; label: string }[] = [
 ];
 export const AD_SIZES = [0.2, 0.25, 0.3, 0.35];
 
+/** Where the program picture sits in the Squeeze Merge "frame" look (the vMix look): 3 x 3 grid. */
+export type Anchor = "tl" | "t" | "tr" | "l" | "c" | "r" | "bl" | "b" | "br";
+export const ANCHORS: Anchor[] = ["tl", "t", "tr", "l", "c", "r", "bl", "b", "br"];
+export const ANCHOR_GLYPH: Record<Anchor, string> = { tl: "◤", t: "▲", tr: "◥", l: "◀", c: "●", r: "▶", bl: "◣", b: "▼", br: "◢" };
+
+/** How the picture gets there. */
+export type AdStyle = "smooth" | "pop" | "linear" | "cut";
+export const AD_STYLES: { id: AdStyle; label: string; hint: string }[] = [
+  { id: "smooth", label: "SMOOTH", hint: "Eases in and out" },
+  { id: "pop", label: "POP", hint: "Overshoots a little, then settles" },
+  { id: "linear", label: "LINEAR", hint: "Constant speed" },
+  { id: "cut", label: "CUT", hint: "Instant, no animation" },
+];
+const easeOutBack = (t: number) => {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+export const adEase = (style: AdStyle): ((t: number) => number) =>
+  style === "pop" ? easeOutBack : style === "linear" ? (t) => t : ease;
+
 export interface AdConfig {
   /** Any OBS source: a scene, image, video, browser source (animated graphic)… */
   scene: string | null;
+  /**
+   * frame = the advertisement is a full-screen graphic BEHIND the program picture; the picture shrinks into
+   * `anchor` and the graphic shows around it (vMix look). strip = the ad is a bar beside the picture (`layout`).
+   */
+  look: "frame" | "strip";
+  /** Frame look: where the program picture sits. */
+  anchor: Anchor;
+  /** Strip look: which side the bar is on. */
   layout: AdLayout;
-  /** Share of the picture the advertisement takes (0.15 .. 0.4). */
+  /** Share of the picture the advertisement takes (0.15 .. 0.4); the program picture becomes 1 - size. */
   size: number;
   /** fit = whole ad visible; fill = ad covers its area (cropped). */
   fit: "fit" | "fill";
+  /** How the picture moves in and out. */
+  style: AdStyle;
 }
 
 export const DEFAULT_PIPS: PipSlot[] = [
   { scene: null, corner: "br", size: 0.3 },
   { scene: null, corner: "bl", size: 0.3 },
 ];
-export const DEFAULT_AD: AdConfig = { scene: null, layout: "r", size: 0.25, fit: "fit" };
+export const DEFAULT_AD: AdConfig = { scene: null, look: "frame", anchor: "tr", layout: "r", size: 0.25, fit: "fit", style: "smooth" };
 
 export const FULL_RECT: FxRect = { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0 };
 
@@ -228,4 +259,21 @@ export function sqmRest(layout: AdLayout, size: number, W: number, H: number): {
 /** Put a full-canvas rect inside `region` (the squeezed program area). */
 export function placeIn(r: FxRect, region: FxRect): FxRect {
   return { ...r, x: region.x + r.x * region.sx, y: region.y + r.y * region.sy, sx: r.sx * region.sx, sy: r.sy * region.sy };
+}
+
+/** Frame look, fully in: the program picture (uniformly scaled, so never squashed) sits at `anchor`; the ad is the full canvas behind it. */
+export function frameTargets(anchor: Anchor, size: number, W: number, H: number): { main: FxRect; ad: FxRect } {
+  const s = 1 - size;
+  const mw = W * s;
+  const mh = H * s;
+  const col = anchor.endsWith("l") ? 0 : anchor.endsWith("r") ? W - mw : (W - mw) / 2;
+  const row = anchor.startsWith("t") ? 0 : anchor.startsWith("b") ? H - mh : (H - mh) / 2;
+  const main: FxRect = { x: col, y: row, sx: s, sy: s, cl: 0, cr: 0, ct: 0, cb: 0 };
+  const ad: FxRect = { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0, bw: W, bh: H };
+  return { main, ad };
+}
+
+/** Frame look at rest: program full screen; the ad is already full-canvas behind it (the picture hides it). */
+export function frameRest(W: number, H: number): { main: FxRect; ad: FxRect } {
+  return { main: { ...FULL_RECT }, ad: { x: 0, y: 0, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0, bw: W, bh: H } };
 }
