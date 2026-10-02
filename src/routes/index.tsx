@@ -190,6 +190,8 @@ function Switcher() {
                     live={state.live}
                     pips={state.config.pips}
                     ad={state.config.ad}
+                    presets={state.config.adPresets}
+                    adActive={state.config.adActive}
                     scenes={state.config.camScenes.filter((s): s is string => !!s)}
                     connected={state.status === "connected"}
                     busy={state.fx.running}
@@ -223,6 +225,7 @@ function Switcher() {
             live={state.live}
             pipScenes={state.config.pips.map((p) => p.scene)}
             adScene={state.config.ad.scene}
+            adName={state.config.adPresets[state.config.adActive]?.name}
             onPip={(slot) => void engine.togglePip(slot)}
             onSqueezeMerge={() => void engine.squeezeMerge()}
             onMove={(dir) => void engine.moveTake(dir)}

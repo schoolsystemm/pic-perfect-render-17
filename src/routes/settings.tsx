@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { LiveFxSettings } from "@/components/mk/live-fx-settings";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { GFX_SCENE } from "@/lib/mk/graphics";
 import { resolveListenUrl } from "@/lib/mk/listen";
@@ -281,6 +282,8 @@ function SettingsPage() {
             ticker, clock, badge) on that DSK, then choose the layer in the source dropdown. Design them on the Graphics page.
           </p>
         </Section>
+
+        <LiveFxSettings />
 
         <Section title="Graphics">
           <Link to="/graphics" className="mk-button flex h-11 w-fit items-center rounded-sm px-4 text-sm text-foreground">
