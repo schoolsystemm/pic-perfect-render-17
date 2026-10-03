@@ -1,7 +1,5 @@
-import { MergeEditor } from "@/components/mk/merge-editor";
-import { SqueezeMergeEditor } from "@/components/mk/squeeze-merge-editor";
 import { TBar } from "@/components/mk/t-bar";
-import { SQUEEZE_DIRS, SQUEEZE_GLYPH, type AdPreset, type FxConfig, type FxLayoutKind, type SqueezeDir } from "@/lib/mk/fx";
+import { SQUEEZE_DIRS, SQUEEZE_GLYPH, type FxConfig, type FxLayoutKind, type SqueezeDir } from "@/lib/mk/fx";
 import { mergeLayoutById, type MergePreset } from "@/lib/mk/merge";
 import { DSK_COUNT, RATE_BUTTONS, type DskTarget, type LiveState } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -21,9 +19,6 @@ interface TransitionPanelProps {
   adScene: string | null;
   /** Name of the selected Squeeze Merge preset. */
   adName?: string | undefined;
-  /** All saved Squeeze Merge presets + the one in use (edited / saved from the SQZ MERGE SETUP button). */
-  adPresets: AdPreset[];
-  adActive: number;
   /** Split-screen Merge looks (2..6 panes + borders) and the one the MERGE button plays. */
   mergePresets: MergePreset[];
   mergeActive: number;
@@ -56,8 +51,6 @@ export function TransitionPanel({
   pipScenes,
   adScene,
   adName,
-  adPresets,
-  adActive,
   mergePresets,
   mergeActive,
   onPip,
@@ -203,7 +196,7 @@ export function TransitionPanel({
                 event.preventDefault();
                 onPip(slot);
               }}
-              title={pipScenes[slot] ? `PIP ${slot + 1}: ${pipScenes[slot]} — stays assigned until you change it` : `PIP ${slot + 1}: assign a scene in Live FX`}
+              title={pipScenes[slot] ? `PIP ${slot + 1}: ${pipScenes[slot]} — stays assigned until you change it` : `PIP ${slot + 1}: assign a scene in Graphics Studio → Live FX & Tags`}
               aria-pressed={!!live.pip[slot]}
               className={cn("mk-button flex h-8 min-w-0 flex-col items-center justify-center gap-[2px] rounded-[3px] px-0 text-[9px]", live.pip[slot] && "mk-lit-program")}
             >
@@ -226,8 +219,6 @@ export function TransitionPanel({
             <span className="max-w-full truncate font-mono text-[6px] font-normal opacity-70">{adName ?? adScene ?? "no ad"}</span>
           </button>
         </div>
-        <MergeEditor presets={mergePresets} active={mergeActive} merging={live.merge} busy={fx.running} />
-        <SqueezeMergeEditor presets={adPresets} adActive={adActive} sqmOn={live.sqm} busy={fx.running} />
         <div className="grid grid-cols-5 items-center gap-1">
           <span className="mk-label text-center text-[8px]">MOVE</span>
           {(["l", "u", "d", "r"] as const).map((dir) => (
