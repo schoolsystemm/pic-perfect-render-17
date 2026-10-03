@@ -257,6 +257,23 @@ export function Multiview(props: MultiviewProps) {
         )}
       </Monitor>
       </div>
+      {props.wall && (
+        <div className="col-span-2 grid min-h-0 grid-cols-4 gap-1.5 @[40rem]:grid-cols-8">
+          {(props.camScenes ?? []).map((scene, i) => (
+            <CamThumb
+              key={i}
+              cam={i}
+              scene={scene}
+              live={live}
+              getThumb={props.getThumb}
+              isProgram={props.program === i}
+              isPreview={props.preview === i}
+              onPreview={props.onPreviewCam}
+              onProgram={props.onProgramCam}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
