@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { AudioMixer, Master } from "@/components/mk/audio-mixer";
 import { ListenControl } from "@/components/mk/listen-control";
 import { GraphicsPanel } from "@/components/mk/graphics-panel";
+import { usePanels, type Panel } from "@/lib/mk/use-panels";
 import { Multiview } from "@/components/mk/multiview";
 import { OutputControls } from "@/components/mk/output-controls";
 import { ReconnectOverlay } from "@/components/mk/reconnect-overlay";
@@ -41,7 +42,6 @@ export const Route = createFileRoute("/")({
   component: Switcher,
 });
 
-type Panel = "multiview" | "wall" | "audio" | "status" | "graphics" | "sounds";
 const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Tools", graphics: "Graphics", sounds: "Sounds" };
 
 function Switcher() {
@@ -54,8 +54,7 @@ function Switcher() {
     const t = tallyOf(state);
     comms.setTally(t.pgm, t.pvw, state.config.camScenes);
   }, [state]);
-  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, wall: true, audio: true, status: true, graphics: true, sounds: true });
-  const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
+  const [show, toggle] = usePanels();
   // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
   const mixInputs = state.audio.filter((c) => !/^MK /i.test(c.name));
   const hiddenAudio = state.config.hiddenAudio;
