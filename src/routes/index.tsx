@@ -92,9 +92,9 @@ function Switcher() {
 
       {/* Console: one screen, nothing scrolls. Below 900px wide it falls back to a scrolling stack. */}
       <main className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5 fit:flex-row fit:overflow-hidden">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 fit:overflow-y-auto">
           {show.multiview && (
-            <div className="min-h-0 shrink-0 fit:flex-1">
+            <div className="min-h-0 shrink-0 fit:min-h-[9rem] fit:flex-1">
               <Multiview
                 program={state.program}
                 preview={state.preview}
@@ -137,12 +137,12 @@ function Switcher() {
           {bottom && (
             <div
               className={cn(
-                "flex min-h-0 shrink-0 flex-col gap-1.5 fit:flex-row",
-                show.multiview ? "fit:h-[clamp(190px,29vh,270px)]" : "fit:flex-1",
+                "flex min-h-0 shrink-0 flex-col gap-1.5 fit:flex-row fit:overflow-x-auto",
+                show.multiview ? "fit:h-[clamp(190px,29vh,270px)] fit:min-h-[11.5rem]" : "fit:min-h-[11.5rem] fit:flex-1",
               )}
             >
               {show.audio && (
-                <div className="h-56 min-w-0 fit:h-auto fit:max-w-[52%] fit:flex-[0_1_auto]">
+                <div className="h-56 min-w-0 fit:h-auto fit:max-w-[52%] fit:shrink-0 fit:flex-[0_0_auto]">
                   <AudioMixer
                     hidden={hiddenAudio.filter((n) => mixInputs.some((c) => c.name === n))}
                     onHide={(name) => engine.hideAudio(name)}
@@ -168,7 +168,7 @@ function Switcher() {
                 </div>
               )}
               {show.status && (
-                <div className="h-40 min-w-0 fit:h-auto fit:min-w-[16rem] fit:flex-1">
+                <div className="h-40 min-w-0 fit:h-auto fit:min-w-[14rem] fit:flex-1">
                   <ToolsHub
                     dskActive={state.dskActive}
                     gfxActive={state.gfxActive}
@@ -179,12 +179,12 @@ function Switcher() {
                 </div>
               )}
               {show.graphics && (
-                <div className="min-w-0 fit:w-[16rem] fit:shrink-0">
+                <div className="min-w-0 fit:w-[14rem] fit:shrink-0 xl:fit:w-[16rem]">
                   <GraphicsPanel graphics={state.config.graphics} active={state.gfxActive} />
                 </div>
               )}
               {show.sounds && (
-                <div className="h-32 min-w-0 fit:h-auto fit:w-[13.5rem] fit:shrink-0">
+                <div className="h-32 min-w-0 fit:h-auto fit:w-[12rem] fit:shrink-0 xl:fit:w-[13.5rem]">
                   <SoundPad />
                 </div>
               )}
@@ -192,7 +192,7 @@ function Switcher() {
           )}
         </div>
 
-        <div className="flex w-full shrink-0 flex-col gap-1.5 fit:min-h-0 fit:w-[15rem]">
+        <div className="flex w-full shrink-0 flex-col gap-1.5 fit:min-h-0 fit:w-[14rem] fit:overflow-y-auto xl:fit:w-[15rem]">
           <OutputControls
             stream={state.stream}
             record={state.record}
