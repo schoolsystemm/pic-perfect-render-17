@@ -16,6 +16,8 @@ const SHORT: Record<GfxId, string> = {
   badge: "Live Badge",
   breaking: "Breaking",
   score: "Scoreboard",
+  social: "Social",
+  full: "Full Screen",
 };
 
 interface GraphicsPanelProps {
