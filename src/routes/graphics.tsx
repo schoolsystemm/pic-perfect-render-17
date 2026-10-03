@@ -15,14 +15,18 @@ import {
   useGfxLibrary,
   type SavedGraphic,
 } from "@/lib/mk/gfx-library";
+import { applyTheme, GFX_THEMES } from "@/lib/mk/gfx-themes";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import {
   BADGE_STYLES,
+  CLOCK_STYLES,
   DEFAULT_GRAPHICS,
+  GFX_ANIMS,
   GFX_FONTS,
   LOWER_STYLES,
   TICKER_STYLES,
   type Corner,
+  type GfxAnim,
   type GfxId,
   type GraphicsConfig,
 } from "@/lib/mk/types";
@@ -154,6 +158,14 @@ function Range({
   );
 }
 
+function Anim({ value, onChange }: { value: GfxAnim; onChange: (v: GfxAnim) => void }) {
+  return (
+    <Row label="Comes on with">
+      <Pick value={value} list={GFX_ANIMS} onChange={onChange} />
+    </Row>
+  );
+}
+
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <button type="button" aria-pressed={checked} onClick={() => onChange(!checked)} className={cn("mk-button h-8 rounded-[3px] px-3 text-[10px]", checked && "mk-lit-amber")}>
@@ -271,6 +283,30 @@ function GraphicsPage() {
       <main className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5 fit:flex-row fit:overflow-hidden">
         {/* ------------------------------------------------ left: build + preview */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
+          <div className="mk-panel flex shrink-0 flex-wrap items-center gap-1 rounded-md p-1.5">
+            <span className="mk-label mr-1 text-[9px]" title="Re-colours and re-styles every graphic at once. Save to put it in OBS.">
+              Theme
+            </span>
+            {GFX_THEMES.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setDraft((d) => applyTheme(d, t));
+                  say(`${t.name} theme applied — Save to put it in OBS`);
+                }}
+                className="mk-button flex h-7 items-center gap-1.5 rounded-[3px] px-2 text-[10px]"
+              >
+                <span className="flex h-3 w-5 overflow-hidden rounded-[2px] border border-white/20">
+                  <span className="h-full flex-1" style={{ background: t.primary }} />
+                  <span className="h-full flex-1" style={{ background: t.secondary }} />
+                  <span className="h-full flex-1" style={{ background: t.accent }} />
+                </span>
+                {t.name}
+              </button>
+            ))}
+          </div>
+
           <div className="flex shrink-0 flex-wrap gap-1">
             {GFX_LAYERS.map((l) => (
               <button
@@ -386,6 +422,13 @@ function GraphicsPage() {
                     w={c.logo.size / 100}
                     h={(c.logo.size / 100) * (16 / 9) * 0.6}
                   />
+                  <Row label="Text mark (used when there is no image)">
+                    <input className={field} value={c.logo.text} maxLength={24} placeholder="e.g. UTV" onChange={(e) => edit("logo", { text: e.target.value })} />
+                  </Row>
+                  <Row label="Mark colour">
+                    <Colour value={c.logo.textColor} onChange={(textColor) => edit("logo", { textColor })} />
+                  </Row>
+                  <Anim value={c.logo.anim} onChange={(anim) => edit("logo", { anim })} />
                   <Range label="Size" value={c.logo.size} min={3} max={60} onChange={(size) => edit("logo", { size })} />
                   <Range label="Opacity" value={c.logo.opacity} min={5} max={100} onChange={(opacity) => edit("logo", { opacity })} />
                 </>
@@ -409,6 +452,17 @@ function GraphicsPage() {
                   <Row label="Style">
                     <Pick value={c.lower.style} list={LOWER_STYLES} onChange={(style) => edit("lower", { style })} />
                   </Row>
+                  <Anim value={c.lower.anim} onChange={(anim) => edit("lower", { anim })} />
+                  {c.lower.style === "sport" && (
+                    <Row label="Shirt number">
+                      <input className={field} value={c.lower.number} maxLength={4} onChange={(e) => edit("lower", { number: e.target.value })} />
+                    </Row>
+                  )}
+                  {(c.lower.style === "presenter" || c.lower.style === "sport") && (
+                    <Row label="Name block colour">
+                      <Colour value={c.lower.primary} onChange={(primary) => edit("lower", { primary })} />
+                    </Row>
+                  )}
                   <Row label="Font">
                     <Pick value={c.lower.font} list={GFX_FONTS} onChange={(font) => edit("lower", { font })} />
                   </Row>
@@ -499,6 +553,20 @@ function GraphicsPage() {
                     w={0.17 * (c.clock.size / 100)}
                     h={0.08 * (c.clock.size / 100)}
                   />
+                  <Row label="Style">
+                    <Pick value={c.clock.style} list={CLOCK_STYLES} onChange={(style) => edit("clock", { style })} />
+                  </Row>
+                  <Anim value={c.clock.anim} onChange={(anim) => edit("clock", { anim })} />
+                  {c.clock.style === "split" && (
+                    <>
+                      <Row label="Tag (EAT, GMT, LOCAL…)">
+                        <input className={field} value={c.clock.label} maxLength={12} onChange={(e) => edit("clock", { label: e.target.value })} />
+                      </Row>
+                      <Row label="Tag colour">
+                        <Colour value={c.clock.accent} onChange={(accent) => edit("clock", { accent })} />
+                      </Row>
+                    </>
+                  )}
                   <Row label="Font">
                     <Pick value={c.clock.font} list={GFX_FONTS} onChange={(font) => edit("clock", { font })} />
                   </Row>
@@ -533,6 +601,17 @@ function GraphicsPage() {
                   <Row label="Style">
                     <Pick value={c.badge.style} list={BADGE_STYLES} onChange={(style) => edit("badge", { style })} />
                   </Row>
+                  <Anim value={c.badge.anim} onChange={(anim) => edit("badge", { anim })} />
+                  {c.badge.style === "location" && (
+                    <>
+                      <Row label="Location (NAIROBI, STUDIO 2…)">
+                        <input className={field} value={c.badge.location} maxLength={32} onChange={(e) => edit("badge", { location: e.target.value })} />
+                      </Row>
+                      <Row label="Location block colour">
+                        <Colour value={c.badge.locBg} onChange={(locBg) => edit("badge", { locBg })} />
+                      </Row>
+                    </>
+                  )}
                   <Row label="Font">
                     <Pick value={c.badge.font} list={GFX_FONTS} onChange={(font) => edit("badge", { font })} />
                   </Row>
@@ -544,6 +623,100 @@ function GraphicsPage() {
                   </Row>
                   <div className="col-span-2">
                     <Range label="Size" value={c.badge.size} min={30} max={300} step={5} onChange={(size) => edit("badge", { size })} />
+                  </div>
+                </>
+              )}
+
+              {active === "breaking" && (
+                <>
+                  <Row label="Label">
+                    <input className={field} value={c.breaking.label} maxLength={24} onChange={(e) => edit("breaking", { label: e.target.value })} />
+                  </Row>
+                  <div className="col-span-2">
+                    <Row label="Headline">
+                      <textarea
+                        className="mk-field min-h-[4.5rem] w-full min-w-0 rounded-[3px] px-2 py-1.5 text-xs"
+                        value={c.breaking.headline}
+                        maxLength={200}
+                        onChange={(e) => edit("breaking", { headline: e.target.value })}
+                      />
+                    </Row>
+                  </div>
+                  <Anim value={c.breaking.anim} onChange={(anim) => edit("breaking", { anim })} />
+                  <Row label="Font">
+                    <Pick value={c.breaking.font} list={GFX_FONTS} onChange={(font) => edit("breaking", { font })} />
+                  </Row>
+                  <Row label="Label colour">
+                    <Colour value={c.breaking.accent} onChange={(accent) => edit("breaking", { accent })} />
+                  </Row>
+                  <Row label="Headline strip">
+                    <Colour value={c.breaking.bg} onChange={(bg) => edit("breaking", { bg })} />
+                  </Row>
+                  <Row label="Headline text">
+                    <Colour value={c.breaking.textColor} onChange={(textColor) => edit("breaking", { textColor })} />
+                  </Row>
+                  <div className="col-span-2">
+                    <Range label="Size" value={c.breaking.size} min={30} max={300} step={5} onChange={(size) => edit("breaking", { size })} />
+                  </div>
+                </>
+              )}
+
+              {active === "score" && (
+                <>
+                  <Row label="Home team">
+                    <input className={field} value={c.score.home} maxLength={8} onChange={(e) => edit("score", { home: e.target.value })} />
+                  </Row>
+                  <Row label="Away team">
+                    <input className={field} value={c.score.away} maxLength={8} onChange={(e) => edit("score", { away: e.target.value })} />
+                  </Row>
+                  <Row label="Home score">
+                    <span className="flex gap-1">
+                      <button type="button" className="mk-button h-8 w-8 shrink-0 rounded-[3px]" onClick={() => edit("score", { homeScore: String(Math.max(0, (Number(c.score.homeScore) || 0) - 1)) })}>
+                        −
+                      </button>
+                      <input className={cn(field, "text-center")} value={c.score.homeScore} maxLength={3} onChange={(e) => edit("score", { homeScore: e.target.value })} />
+                      <button type="button" className="mk-button h-8 w-8 shrink-0 rounded-[3px]" onClick={() => edit("score", { homeScore: String((Number(c.score.homeScore) || 0) + 1) })}>
+                        +
+                      </button>
+                    </span>
+                  </Row>
+                  <Row label="Away score">
+                    <span className="flex gap-1">
+                      <button type="button" className="mk-button h-8 w-8 shrink-0 rounded-[3px]" onClick={() => edit("score", { awayScore: String(Math.max(0, (Number(c.score.awayScore) || 0) - 1)) })}>
+                        −
+                      </button>
+                      <input className={cn(field, "text-center")} value={c.score.awayScore} maxLength={3} onChange={(e) => edit("score", { awayScore: e.target.value })} />
+                      <button type="button" className="mk-button h-8 w-8 shrink-0 rounded-[3px]" onClick={() => edit("score", { awayScore: String((Number(c.score.awayScore) || 0) + 1) })}>
+                        +
+                      </button>
+                    </span>
+                  </Row>
+                  <Row label="Match clock (blank = hide)">
+                    <input className={field} value={c.score.clock} maxLength={10} onChange={(e) => edit("score", { clock: e.target.value })} />
+                  </Row>
+                  <Anim value={c.score.anim} onChange={(anim) => edit("score", { anim })} />
+                  <Place
+                    at={c.score.at}
+                    corner={c.score.pos}
+                    onCorner={(pos) => edit("score", { pos })}
+                    onAt={(at) => edit("score", { at })}
+                    w={0.34 * (c.score.size / 100)}
+                    h={0.06 * (c.score.size / 100)}
+                  />
+                  <Row label="Font">
+                    <Pick value={c.score.font} list={GFX_FONTS} onChange={(font) => edit("score", { font })} />
+                  </Row>
+                  <Row label="Team colour">
+                    <Colour value={c.score.primary} onChange={(primary) => edit("score", { primary })} />
+                  </Row>
+                  <Row label="Clock block">
+                    <Colour value={c.score.accent} onChange={(accent) => edit("score", { accent })} />
+                  </Row>
+                  <Row label="Text colour">
+                    <Colour value={c.score.textColor} onChange={(textColor) => edit("score", { textColor })} />
+                  </Row>
+                  <div className="col-span-2">
+                    <Range label="Size" value={c.score.size} min={30} max={300} step={5} onChange={(size) => edit("score", { size })} />
                   </div>
                 </>
               )}
