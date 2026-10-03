@@ -51,6 +51,8 @@ interface LooseGraphics {
   ticker?: Partial<GraphicsConfig["ticker"]>;
   clock?: Partial<GraphicsConfig["clock"]>;
   badge?: Partial<GraphicsConfig["badge"]>;
+  breaking?: Partial<GraphicsConfig["breaking"]>;
+  score?: Partial<GraphicsConfig["score"]>;
 }
 
 /** Keep only well-formed scroll presets (storage and share links are untrusted). */
@@ -88,6 +90,9 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
         at: null,
         size: r.logoSize ?? D.logo.size,
         opacity: D.logo.opacity,
+        text: D.logo.text,
+        textColor: D.logo.textColor,
+        anim: D.logo.anim,
       },
       lower: {
         ...D.lower,
@@ -111,6 +116,8 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
     },
     clock: { ...D.clock, ...(r.clock ?? {}) },
     badge: { ...D.badge, ...(r.badge ?? {}) },
+    breaking: { ...D.breaking, ...(r.breaking ?? {}) },
+    score: { ...D.score, ...(r.score ?? {}) },
   };
 }
 

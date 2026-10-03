@@ -25,8 +25,18 @@ export interface DskTarget {
 }
 
 export type Corner = "tl" | "tr" | "bl" | "br";
-export type GfxId = "logo" | "lower" | "ticker" | "clock" | "badge";
-export const GFX_IDS: GfxId[] = ["logo", "lower", "ticker", "clock", "badge"];
+export type GfxId = "logo" | "lower" | "ticker" | "clock" | "badge" | "breaking" | "score";
+export const GFX_IDS: GfxId[] = ["logo", "lower", "ticker", "clock", "badge", "breaking", "score"];
+
+/** How a graphic comes on screen. */
+export type GfxAnim = "slide" | "fade" | "wipe" | "scale" | "reveal";
+export const GFX_ANIMS: { id: GfxAnim; label: string }[] = [
+  { id: "slide", label: "Slide" },
+  { id: "fade", label: "Fade" },
+  { id: "wipe", label: "Wipe" },
+  { id: "scale", label: "Pop" },
+  { id: "reveal", label: "Reveal" },
+];
 
 export interface LowerPreset {
   name: string;
@@ -41,26 +51,37 @@ export const GFX_FONTS: { id: GfxFont; label: string }[] = [
   { id: "mono", label: "Mono" },
 ];
 
-export type LowerStyle = "bar" | "glass" | "underline" | "box";
+export type LowerStyle = "bar" | "glass" | "underline" | "box" | "presenter" | "guest" | "sport";
 export const LOWER_STYLES: { id: LowerStyle; label: string }[] = [
+  { id: "presenter", label: "Presenter (news)" },
+  { id: "guest", label: "Guest strap" },
+  { id: "sport", label: "Player ID (sport)" },
   { id: "bar", label: "Classic bar" },
   { id: "glass", label: "Glass" },
   { id: "underline", label: "Underline" },
   { id: "box", label: "Boxed" },
 ];
 
-export type TickerStyle = "solid" | "glass" | "outline";
+export type TickerStyle = "solid" | "glass" | "outline" | "news";
 export const TICKER_STYLES: { id: TickerStyle; label: string }[] = [
+  { id: "news", label: "News bar" },
   { id: "solid", label: "Solid" },
   { id: "glass", label: "Glass" },
   { id: "outline", label: "Outline" },
 ];
 
-export type BadgeStyle = "solid" | "outline" | "glass";
+export type BadgeStyle = "solid" | "outline" | "glass" | "location";
 export const BADGE_STYLES: { id: BadgeStyle; label: string }[] = [
+  { id: "location", label: "Live + location" },
   { id: "solid", label: "Solid" },
   { id: "outline", label: "Outline" },
   { id: "glass", label: "Glass" },
+];
+
+export type ClockStyle = "solid" | "split";
+export const CLOCK_STYLES: { id: ClockStyle; label: string }[] = [
+  { id: "split", label: "Label + time" },
+  { id: "solid", label: "Solid" },
 ];
 
 /** A ready-made scrolling message: one tap loads it into the ticker and sends it on air. */
@@ -83,16 +104,32 @@ export const DEFAULT_SCROLLS: ScrollPreset[] = [
 ];
 
 export interface GraphicsConfig {
-  logo: { image: string | null; pos: Corner; /** Hand-placed spot (0..1 across the free space). Wins over `pos` when set. */ at: PlacePos | null; size: number; opacity: number };
+  logo: {
+    image: string | null;
+    pos: Corner;
+    /** Hand-placed spot (0..1 across the free space). Wins over `pos` when set. */
+    at: PlacePos | null;
+    size: number;
+    opacity: number;
+    /** Station mark drawn as text when there is no image (empty = nothing). */
+    text: string;
+    textColor: string;
+    anim: GfxAnim;
+  };
   lower: {
     /** Hand-placed spot (0..1 across the free space). null = the default lower-third spot. */
     at: PlacePos | null;
     name: string;
     title: string;
+    /** Jersey / shirt number, shown by the Player ID style. */
+    number: string;
     accent: string;
+    /** Name-block colour of the Presenter and Player ID styles. */
+    primary: string;
     presets: LowerPreset[];
     size: number;
     style: LowerStyle;
+    anim: GfxAnim;
     bg: string;
     bgOpacity: number;
     text: string;
@@ -122,6 +159,11 @@ export interface GraphicsConfig {
     scrolls: ScrollPreset[];
   };
   clock: {
+    /** Small tag before the time (EAT, GMT, LOCAL…). Shown by the Label + time style. */
+    label: string;
+    accent: string;
+    style: ClockStyle;
+    anim: GfxAnim;
     pos: Corner;
     /** Hand-placed spot (0..1 across the free space). Wins over `pos` when set. */
     at: PlacePos | null;
@@ -133,19 +175,68 @@ export interface GraphicsConfig {
     textColor: string;
     font: GfxFont;
   };
-  badge: { text: string; pos: Corner; at: PlacePos | null; color: string; size: number; style: BadgeStyle; textColor: string; font: GfxFont };
+  badge: {
+    text: string;
+    /** Place name beside the LIVE tag (Live + location style). */
+    location: string;
+    locBg: string;
+    pos: Corner;
+    at: PlacePos | null;
+    color: string;
+    size: number;
+    style: BadgeStyle;
+    anim: GfxAnim;
+    textColor: string;
+    font: GfxFont;
+  };
+  /** Full-width breaking-news banner. */
+  breaking: {
+    label: string;
+    headline: string;
+    /** Label block colour. */
+    accent: string;
+    /** Headline strip colour. */
+    bg: string;
+    textColor: string;
+    size: number;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
+  /** Match scoreboard bug. */
+  score: {
+    home: string;
+    away: string;
+    homeScore: string;
+    awayScore: string;
+    clock: string;
+    pos: Corner;
+    at: PlacePos | null;
+    size: number;
+    /** Team blocks. */
+    primary: string;
+    /** Clock block. */
+    accent: string;
+    /** Text colour on the score + clock blocks. */
+    bg: string;
+    textColor: string;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
 }
 
 export const DEFAULT_GRAPHICS: GraphicsConfig = {
-  logo: { image: null, pos: "tr", at: null, size: 12, opacity: 100 },
+  logo: { image: null, pos: "tr", at: null, size: 12, opacity: 100, text: "", textColor: "#ffffff", anim: "fade" },
   lower: {
     at: null,
     name: "Guest Name",
     title: "Title / Role",
+    number: "10",
     accent: "#f5a623",
+    primary: "#0b4fa8",
     presets: [],
     size: 100,
     style: "bar",
+    anim: "slide",
     bg: "#0a0c10",
     bgOpacity: 90,
     text: "#ffffff",
@@ -168,8 +259,35 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     loop: true,
     scrolls: DEFAULT_SCROLLS,
   },
-  clock: { pos: "br", at: null, seconds: true, h24: true, size: 100, bg: "#0a0c10", bgOpacity: 88, textColor: "#ffffff", font: "mono" },
-  badge: { text: "LIVE", pos: "tl", at: null, color: "#e5322d", size: 100, style: "solid", textColor: "#ffffff", font: "sans" },
+  clock: { label: "", accent: "#f5b700", style: "solid", anim: "fade", pos: "br", at: null, seconds: true, h24: true, size: 100, bg: "#0a0c10", bgOpacity: 88, textColor: "#ffffff", font: "mono" },
+  badge: { text: "LIVE", location: "", locBg: "#0a1628", pos: "tl", at: null, color: "#e5322d", size: 100, style: "solid", anim: "fade", textColor: "#ffffff", font: "sans" },
+  breaking: {
+    label: "BREAKING NEWS",
+    headline: "Parliament passes new climate bill after overnight session",
+    accent: "#d0161d",
+    bg: "#ffffff",
+    textColor: "#111111",
+    size: 100,
+    font: "condensed",
+    anim: "slide",
+  },
+  score: {
+    home: "LEO",
+    away: "RHI",
+    homeScore: "0",
+    awayScore: "0",
+    clock: "00:00",
+    pos: "tl",
+    // Top-centre by default so it never lands on the logo, LIVE badge or clock corners.
+    at: { x: 0.5, y: 0.05 },
+    size: 100,
+    primary: "#0f8a4a",
+    accent: "#d7ff3a",
+    bg: "#0b130f",
+    textColor: "#ffffff",
+    font: "condensed",
+    anim: "slide",
+  },
 };
 
 export const IDLE_GFX: Record<GfxId, boolean> = {
@@ -178,6 +296,8 @@ export const IDLE_GFX: Record<GfxId, boolean> = {
   ticker: false,
   clock: false,
   badge: false,
+  breaking: false,
+  score: false,
 };
 
 export interface MkConfig {

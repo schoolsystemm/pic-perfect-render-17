@@ -2,7 +2,7 @@
 // embedded in a data: URL — nothing to host or upload. Layers live in the
 // "MK Graphics" scene and are switched on/off independently of the DSKs.
 import type { PlacePos } from "./fx";
-import type { Corner, GfxFont, GfxId, GraphicsConfig } from "./types";
+import { GFX_ANIMS, type Corner, type GfxAnim, type GfxFont, type GfxId, type GraphicsConfig } from "./types";
 
 export const GFX_SCENE = "MK Graphics";
 
@@ -12,6 +12,9 @@ export const GFX_LAYERS: { id: GfxId; name: string; label: string }[] = [
   { id: "ticker", name: "MK Ticker", label: "Ticker" },
   { id: "clock", name: "MK Clock", label: "Clock" },
   { id: "badge", name: "MK Badge", label: "Live Badge" },
+  // Newer layers go last: later = higher in the OBS scene, so Breaking sits on top of everything.
+  { id: "score", name: "MK Scoreboard", label: "Scoreboard" },
+  { id: "breaking", name: "MK Breaking", label: "Breaking" },
 ];
 
 export const gfxName = (id: GfxId) => GFX_LAYERS.find((l) => l.id === id)!.name;
@@ -93,27 +96,105 @@ const page = (css: string, body: string, script = "") =>
     `<!doctype html><html><head><meta charset="utf-8"><style>${BASE}${css}</style></head><body>${body}${script ? `<script>${script}</script>` : ""}</body></html>`,
   );
 
+/** Perceived brightness 0..255. */
+function lum(hex: string) {
+  let h = color(hex, "#000000").slice(1);
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const n = parseInt(h.slice(0, 6), 16);
+  return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+}
+
+/** Black or white, whichever reads better on this colour. */
+const contrast = (hex: string) => (lum(hex) > 150 ? "#0a0c10" : "#ffffff");
+
+/** Keep the chosen text colour when it reads on this background, otherwise fall back to black / white. */
+const readable = (fg: string, bg: string) => (Math.abs(lum(fg) - lum(bg)) >= 90 ? color(fg, "#ffffff") : contrast(bg));
+
+type Side = "l" | "r";
+const sideOf = (pos: Corner, at: PlacePos | null): Side => (at ? (at.x < 0.5 ? "l" : "r") : pos === "tr" || pos === "br" ? "r" : "l");
+
+/**
+ * Entrance animation, applied to an inner `.an` wrapper (the outer element owns position + scale,
+ * so the two transforms never fight). `side` = which edge it comes in from.
+ */
+function enter(kind: GfxAnim | string, side: Side, ms = 600) {
+  const k: GfxAnim = GFX_ANIMS.some((a) => a.id === kind) ? (kind as GfxAnim) : "fade";
+  const from = side === "l" ? "-115%" : "115%";
+  const hide = side === "l" ? "inset(0 100% 0 0)" : "inset(0 0 0 100%)";
+  const frames: Record<GfxAnim, string> = {
+    slide: `from{transform:translateX(${from});opacity:0}to{transform:none;opacity:1}`,
+    fade: "from{opacity:0}to{opacity:1}",
+    wipe: `from{clip-path:${hide}}to{clip-path:inset(0 0 0 0)}`,
+    scale: "from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}",
+    reveal: "from{clip-path:inset(100% 0 0 0);transform:translateY(18%)}to{clip-path:inset(0 0 0 0);transform:none}",
+  };
+  return `@keyframes gin{${frames[k]}}.an{animation:gin ${ms}ms cubic-bezier(.2,.8,.2,1) both;transform-origin:${side === "l" ? "left" : "right"} center}`;
+}
+
 function logo(g: GraphicsConfig) {
   const { pos, size, opacity } = g.logo;
   const at = spot(g.logo.at);
   const image = safeImage(g.logo.image);
   const where = at ? placeCss(at) : `position:absolute;${POS[pos]}`;
-  const img = image
-    ? `<img src="${image}" style="${where};width:${num(size, 12, 3, 60)}vw;opacity:${num(opacity, 100, 5, 100) / 100};animation:in .5s ease both">`
-    : "";
-  return page("@keyframes in{from{opacity:0}to{opacity:1}}", img);
+  const w = num(size, 12, 3, 60);
+  const op = num(opacity, 100, 5, 100) / 100;
+  const mark = (g.logo.text ?? "").trim();
+  const tc = color(g.logo.textColor, "#ffffff");
+  const inner = image
+    ? `<img src="${image}" style="display:block;width:${w}vw;opacity:${op}">`
+    : mark
+      ? `<div class="m">${esc(mark)}</div>`
+      : "";
+  return page(
+    `.sc{${where}}${enter(g.logo.anim, sideOf(pos, at))}.m{opacity:${op};color:${tc};border:${(w * 0.0175).toFixed(2)}vw solid ${tc};font-size:${(w * 0.21).toFixed(2)}vw;font-weight:800;letter-spacing:.08em;padding:.05em .35em;white-space:nowrap}`,
+    inner ? `<div class="sc"><div class="an">${inner}</div></div>` : "",
+  );
 }
 
 function lower(g: GraphicsConfig) {
   const L = g.lower;
   const a = color(L.accent, "#f5a623");
   const txt = color(L.text, "#ffffff");
+  const prim = color(L.primary, "#0b4fa8");
   const bgc = rgba(L.bg, L.bgOpacity);
   const ff = font(L.font);
   const at = spot(L.at);
   const sc = at
     ? placeCss(at, scale(L.size))
     : `position:absolute;left:6vw;bottom:13vh;transform:scale(${scale(L.size)});transform-origin:bottom left`;
+  const head = `.sc{${sc}}${enter(L.anim, sideOf("bl", at))}.lt{display:flex;font-family:${ff};color:${txt}}`;
+  const name = esc(L.name);
+  const title = esc(L.title);
+
+  // ---- broadcast styles (Presenter / Guest strap / Player ID)
+  if (L.style === "presenter") {
+    return page(
+      `${head}.lt{flex-direction:column}.r{display:flex}.ab{width:.73vw;background:${a}}
+.nm{background:${prim};color:${readable(L.text, prim)};font-size:3.33vw;font-weight:800;letter-spacing:.05vw;padding:.52vw 2.08vw;text-transform:uppercase;white-space:nowrap}
+.ti{margin-left:.73vw;align-self:flex-start;background:${bgc};font-size:1.77vw;padding:.42vw 2.08vw;white-space:nowrap}`,
+      `<div class="sc"><div class="an"><div class="lt"><div class="r"><div class="ab"></div><div class="nm">${name}</div></div><div class="ti">${title}</div></div></div></div>`,
+    );
+  }
+  if (L.style === "guest") {
+    const sub = title.replace(/•/g, `<span style="color:${a}">•</span>`);
+    return page(
+      `${head}.lt{flex-direction:column;background:${bgc};border-top:.31vw solid ${a};padding:1.15vw 2.5vw;min-width:30vw;box-shadow:0 .6vw 2vw rgba(0,0,0,.35)}
+.nm{font-size:2.9vw;font-weight:700;white-space:nowrap}
+.ti{font-size:1.56vw;opacity:.92;margin-top:.2vw;white-space:nowrap}`,
+      `<div class="sc"><div class="an"><div class="lt"><div class="nm">${name}</div><div class="ti">${sub}</div></div></div></div>`,
+    );
+  }
+  if (L.style === "sport") {
+    return page(
+      `${head}.nb{background:${a};color:${color(L.bg, "#0a0c10")};font-size:5.7vw;font-weight:800;padding:0 1.9vw;display:flex;align-items:center;font-variant-numeric:tabular-nums}
+.bx{background:${prim};color:${readable(L.text, prim)};padding:.94vw 2.1vw}
+.nm{font-size:3.1vw;font-weight:800;text-transform:uppercase;white-space:nowrap}
+.ti{font-size:1.67vw;white-space:nowrap}`,
+      `<div class="sc"><div class="an"><div class="lt"><div class="nb">${esc(L.number)}</div><div class="bx"><div class="nm">${name}</div><div class="ti">${title}</div></div></div></div></div>`,
+    );
+  }
+
+  // ---- classic styles
   const glass = L.style === "glass";
   const boxed = L.style === "box";
   const under = L.style === "underline";
@@ -126,14 +207,12 @@ function lower(g: GraphicsConfig) {
         : `background:${bgc}`;
   const bar = under || boxed ? "" : `<div class="bar"></div>`;
   return page(
-    `.sc{${sc}}
-.lt{display:flex;animation:in .6s cubic-bezier(.2,.8,.2,1) both;font-family:${ff}}
+    `${head}
 .bar{width:.9vw;background:${a}${glass ? ";box-shadow:0 0 1.4vw " + a : ""}}
-.box{${box};padding:1.2vw 2.6vw 1.2vw 1.6vw;color:${txt}}
+.box{${box};padding:1.2vw 2.6vw 1.2vw 1.6vw}
 .n{font-size:3.4vw;font-weight:800;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
-.t{font-size:1.9vw;color:${a};margin-top:.3vw;white-space:nowrap}
-@keyframes in{from{transform:translateX(-120%);opacity:0}to{transform:none;opacity:1}}`,
-    `<div class="sc"><div class="lt">${bar}<div class="box"><div class="n">${esc(L.name)}</div><div class="t">${esc(L.title)}</div></div></div></div>`,
+.t{font-size:1.9vw;color:${a};margin-top:.3vw;white-space:nowrap}`,
+    `<div class="sc"><div class="an"><div class="lt">${bar}<div class="box"><div class="n">${name}</div><div class="t">${title}</div></div></div></div></div>`,
   );
 }
 
@@ -153,34 +232,49 @@ function ticker(g: GraphicsConfig) {
   const to = direction === "right" ? "translateX(100vw)" : "translateX(-100%)";
   const a = color(accent, "#e5322d");
   const txt = color(g.ticker.textColor, "#ffffff");
+  const news = style === "news";
   const bgc =
     style === "glass"
       ? `background:${rgba(g.ticker.bg, Math.min(g.ticker.bgOpacity, 55))};backdrop-filter:blur(14px);border-top:1px solid rgba(255,255,255,.25)`
       : style === "outline"
         ? `background:${rgba(g.ticker.bg, g.ticker.bgOpacity)};border-top:.25vw solid ${a};border-bottom:.25vw solid ${a};box-sizing:border-box`
         : `background:${rgba(g.ticker.bg, g.ticker.bgOpacity)}`;
+  // News bar: several headlines (new lines or " | ") are run together with diamonds.
+  const shown = news
+    ? text.split(/\n+| \| /).map((t) => t.trim()).filter(Boolean).join("     ◆     ")
+    : text;
+  const lbText = news ? contrast(a) : "#fff";
   return page(
     `.tk{position:absolute;left:0;right:0;${edge};height:${(7 * k).toFixed(2)}vh;display:flex;${bgc};color:${txt};font-family:${font(g.ticker.font)};overflow:hidden;animation:up .5s ease both${once ? `,out .5s ease ${(secs + 0.5).toFixed(1)}s forwards` : ""}}
-.lb{background:${a};color:#fff;padding:0 2vw;display:flex;align-items:center;font-weight:800;font-size:${(2.4 * k).toFixed(2)}vw;letter-spacing:.1em;z-index:2}
+.lb{background:${a};color:${lbText};padding:0 2vw;display:flex;align-items:center;font-weight:800;font-size:${(2.4 * k).toFixed(2)}vw;letter-spacing:.1em;z-index:2${news ? ";box-shadow:.4vw 0 1.2vw rgba(0,0,0,.35)" : ""}}
 .tr{flex:1;position:relative;overflow:hidden}
 .tx{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;font-size:${(2.6 * k).toFixed(2)}vw;animation:mq ${secs}s linear ${once ? "1 forwards" : "infinite"}}
 @keyframes mq{from{transform:${move}}to{transform:${to}}}
 @keyframes up{from{transform:translateY(${from})}to{transform:none}}
 @keyframes out{from{transform:none}to{transform:translateY(${from})}}`,
-    `<div class="tk">${label ? `<div class="lb">${esc(label)}</div>` : ""}<div class="tr"><div class="tx">${esc(text)}</div></div></div>`,
+    `<div class="tk">${label ? `<div class="lb">${esc(label)}</div>` : ""}<div class="tr"><div class="tx">${esc(shown)}</div></div></div>`,
   );
 }
 
 function clock(g: GraphicsConfig) {
-  const { pos, seconds, h24 } = g.clock;
-  const at = spot(g.clock.at);
+  const C = g.clock;
+  const { pos, seconds, h24 } = C;
+  const at = spot(C.at);
   const where = at
-    ? placeCss(at, scale(g.clock.size))
-    : `position:absolute;${POS[pos]};transform:scale(${scale(g.clock.size)});transform-origin:${ORIGIN[pos]}`;
+    ? placeCss(at, scale(C.size))
+    : `position:absolute;${POS[pos]};transform:scale(${scale(C.size)});transform-origin:${ORIGIN[pos]}`;
+  const txt = color(C.textColor, "#ffffff");
+  const a = color(C.accent, "#f5b700");
+  const split = C.style === "split";
+  const label = (C.label ?? "").trim();
+  const look = split
+    ? `.c{display:flex;color:${txt};font-family:${font(C.font)};font-size:2.4vw;font-weight:700;font-variant-numeric:tabular-nums}
+.lab{background:${a};color:${contrast(a)};padding:.5vw 1.1vw;letter-spacing:.05em}
+.tm{background:${rgba(C.bg, C.bgOpacity)};padding:.5vw 1.3vw}`
+    : `.c{background:${rgba(C.bg, C.bgOpacity)};color:${txt};font-family:${font(C.font)};font-size:2.8vw;font-weight:700;padding:.6vw 1.6vw;border-radius:.6vw}`;
   return page(
-    `.c{${where};background:${rgba(g.clock.bg, g.clock.bgOpacity)};color:${color(g.clock.textColor, "#ffffff")};font-family:${font(g.clock.font)};font-size:2.8vw;font-weight:700;padding:.6vw 1.6vw;border-radius:.6vw;animation:in .5s ease both}
-@keyframes in{from{opacity:0}to{opacity:1}}`,
-    `<div class="c" id="c">--:--</div>`,
+    `.sc{${where}}${enter(C.anim, sideOf(pos, at))}${look}`,
+    `<div class="sc"><div class="an"><div class="c">${split && label ? `<div class="lab">${esc(label)}</div>` : ""}<div class="tm" id="c">--:--</div></div></div></div>`,
     `var H24=${h24 ? "true" : "false"},SEC=${seconds ? "true" : "false"};function p(n){return String(n).padStart(2,'0')}
 function t(){var d=new Date(),h=d.getHours(),s='';if(!H24){s=h>=12?' PM':' AM';h=h%12||12}
 document.getElementById('c').textContent=p(h)+':'+p(d.getMinutes())+(SEC?':'+p(d.getSeconds()):'')+s}
@@ -189,13 +283,28 @@ t();setInterval(t,500);`,
 }
 
 function badge(g: GraphicsConfig) {
-  const { text, pos, color: c, style } = g.badge;
-  const at = spot(g.badge.at);
+  const B = g.badge;
+  const { text, pos, color: c, style } = B;
+  const at = spot(B.at);
   const where = at
-    ? placeCss(at, scale(g.badge.size))
-    : `position:absolute;${POS[pos]};transform:scale(${scale(g.badge.size)});transform-origin:${ORIGIN[pos]}`;
+    ? placeCss(at, scale(B.size))
+    : `position:absolute;${POS[pos]};transform:scale(${scale(B.size)});transform-origin:${ORIGIN[pos]}`;
   const col = color(c, "#e5322d");
-  const txt = color(g.badge.textColor, "#ffffff");
+  const txt = color(B.textColor, "#ffffff");
+  const head = `.sc{${where}}${enter(B.anim, sideOf(pos, at))}@keyframes p{50%{opacity:.25}}`;
+
+  if (style === "location") {
+    const locBg = color(B.locBg, "#0a1628");
+    const loc = (B.location ?? "").trim();
+    return page(
+      `${head}.b{display:flex;font-family:${font(B.font)};font-weight:800;font-size:1.9vw}
+.tg{display:flex;align-items:center;gap:.62vw;background:${col};color:${txt};padding:.42vw 1.04vw}
+.d{width:.83vw;height:.83vw;border-radius:50%;background:${txt};animation:p 1.2s ease-in-out infinite}
+.lc{background:${locBg};color:${contrast(locBg)};padding:.42vw 1.25vw;letter-spacing:.1em;text-transform:uppercase}`,
+      `<div class="sc"><div class="an"><div class="b"><div class="tg"><span class="d"></span>${esc(text)}</div>${loc ? `<div class="lc">${esc(loc)}</div>` : ""}</div></div></div>`,
+    );
+  }
+
   const look =
     style === "outline"
       ? `background:transparent;border:.25vw solid ${col};color:${txt}`
@@ -203,10 +312,43 @@ function badge(g: GraphicsConfig) {
         ? `background:${rgba(col, 45)};backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.35);color:${txt}`
         : `background:${col};color:${txt}`;
   return page(
-    `.b{${where};display:flex;align-items:center;gap:.8vw;${look};font-family:${font(g.badge.font)};font-weight:800;font-size:2.4vw;letter-spacing:.1em;padding:.5vw 1.6vw;border-radius:.6vw;animation:in .4s ease both}
-.d{width:1.2vw;height:1.2vw;border-radius:50%;background:${style === "outline" ? col : txt};animation:p 1.2s ease-in-out infinite}
-@keyframes p{50%{opacity:.25}}@keyframes in{from{opacity:0}to{opacity:1}}`,
-    `<div class="b"><span class="d"></span>${esc(text)}</div>`,
+    `${head}.b{display:flex;align-items:center;gap:.8vw;${look};font-family:${font(B.font)};font-weight:800;font-size:2.4vw;letter-spacing:.1em;padding:.5vw 1.6vw;border-radius:.6vw}
+.d{width:1.2vw;height:1.2vw;border-radius:50%;background:${style === "outline" ? col : txt};animation:p 1.2s ease-in-out infinite}`,
+    `<div class="sc"><div class="an"><div class="b"><span class="d"></span>${esc(text)}</div></div></div>`,
+  );
+}
+
+function breaking(g: GraphicsConfig) {
+  const B = g.breaking;
+  const k = scale(B.size);
+  const acc = color(B.accent, "#d0161d");
+  return page(
+    `.sc{position:absolute;left:0;right:0;bottom:8.5vh}${enter(B.anim, "l")}
+.bn{display:flex;height:${(11 * k).toFixed(2)}vh;font-family:${font(B.font)}}
+.lb{background:${acc};color:${contrast(acc)};font-size:${(2.8 * k).toFixed(2)}vw;font-weight:800;padding:0 2.5vw;display:flex;align-items:center;letter-spacing:.1vw;white-space:nowrap}
+.lb span{animation:pl 1.2s ease-in-out infinite}
+.hd{flex:1;min-width:0;background:${color(B.bg, "#ffffff")};color:${color(B.textColor, "#111111")};font-size:${(2.6 * k).toFixed(2)}vw;font-weight:700;display:flex;align-items:center;padding:0 2.1vw;line-height:1.1}
+.hd div{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@keyframes pl{50%{opacity:.55}}`,
+    `<div class="sc"><div class="an"><div class="bn"><div class="lb"><span>${esc(B.label)}</span></div><div class="hd"><div>${esc(B.headline)}</div></div></div></div></div>`,
+  );
+}
+
+function score(g: GraphicsConfig) {
+  const S = g.score;
+  const at = spot(S.at);
+  const where = at
+    ? placeCss(at, scale(S.size))
+    : `position:absolute;${POS[S.pos]};transform:scale(${scale(S.size)});transform-origin:${ORIGIN[S.pos]}`;
+  const txt = color(S.textColor, "#ffffff");
+  const dark = color(S.bg, "#0b130f");
+  return page(
+    `.sc{${where}}${enter(S.anim, sideOf(S.pos, at))}
+.s{display:flex;font-family:${font(S.font)};font-size:2.1vw;font-weight:800;color:${txt}}
+.tm{background:${color(S.primary, "#0f8a4a")};color:${readable(txt, color(S.primary, "#0f8a4a"))};padding:.42vw 1.25vw;letter-spacing:.05em}
+.sb{background:${txt};color:${readable(dark, txt)};padding:.42vw 1.15vw;font-variant-numeric:tabular-nums}
+.ck{background:${color(S.accent, "#d7ff3a")};color:${dark};padding:.42vw 1.15vw;font-variant-numeric:tabular-nums}`,
+    `<div class="sc"><div class="an"><div class="s"><div class="tm">${esc(S.home)}</div><div class="sb">${esc(S.homeScore)}–${esc(S.awayScore)}</div><div class="tm">${esc(S.away)}</div>${S.clock ? `<div class="ck">${esc(S.clock)}</div>` : ""}</div></div></div>`,
   );
 }
 
@@ -222,6 +364,10 @@ export function layerUrl(id: GfxId, g: GraphicsConfig): string {
       return clock(g);
     case "badge":
       return badge(g);
+    case "breaking":
+      return breaking(g);
+    case "score":
+      return score(g);
   }
 }
 
