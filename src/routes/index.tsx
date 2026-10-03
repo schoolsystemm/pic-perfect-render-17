@@ -213,6 +213,8 @@ function Switcher() {
             adName={state.config.adPresets[state.config.adActive]?.name}
             mergePresets={state.config.mergePresets}
             mergeActive={state.config.mergeActive}
+            adPresets={state.config.adPresets}
+            adActive={state.config.adActive}
             onPip={(slot) => void engine.togglePip(slot)}
             onSqueezeMerge={() => void engine.squeezeMerge()}
             onMove={(dir) => void engine.moveTake(dir)}
