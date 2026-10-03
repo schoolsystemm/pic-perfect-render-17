@@ -230,28 +230,27 @@ function Switcher() {
             onTBarChange={(value) => engine.setTBar(value)}
             onTBarRelease={(value) => engine.setTBar(value, true)}
           />
-          {show.audio && (
-            <div className={cn("h-56 shrink-0 fit:h-[clamp(190px,29vh,270px)]", !show.multiview && "fit:h-[clamp(190px,42vh,380px)]")}>
-              <Master
-                channels={mixInputs}
-                levels={state.levels}
-                afv={state.config.audioFollowVideo}
-                limiter={state.config.limiter}
-                gr={state.gr}
-                masterMuted={state.masterMuted}
-                camOf={(name) => engine.audioCam(name)}
-                onVolume={(name, db) => void engine.setAudioVolume(name, db)}
-                onMute={(name) => void engine.toggleAudioMute(name)}
-                onMonitor={(name) => void engine.cycleAudioMonitor(name)}
-                onStream={(name) => void engine.toggleAudioStream(name)}
-                onPre={(name) => void engine.toggleAudioPre(name)}
-                onHearFinal={(on) => void engine.hearFinalInPre(on)}
-                onAfv={(on) => engine.setAudioFollowVideo(on)}
-                onLimiter={(patch) => engine.setLimiter(patch)}
-                onMuteOut={() => void engine.toggleMasterMute()}
-              />
-            </div>
-          )}
+          {/* The Master stays on screen even when the Audio mixer panel is hidden. */}
+          <div className={cn("h-56 shrink-0 fit:h-[clamp(190px,29vh,270px)]", !show.multiview && "fit:h-[clamp(190px,42vh,380px)]")}>
+            <Master
+              channels={mixInputs}
+              levels={state.levels}
+              afv={state.config.audioFollowVideo}
+              limiter={state.config.limiter}
+              gr={state.gr}
+              masterMuted={state.masterMuted}
+              camOf={(name) => engine.audioCam(name)}
+              onVolume={(name, db) => void engine.setAudioVolume(name, db)}
+              onMute={(name) => void engine.toggleAudioMute(name)}
+              onMonitor={(name) => void engine.cycleAudioMonitor(name)}
+              onStream={(name) => void engine.toggleAudioStream(name)}
+              onPre={(name) => void engine.toggleAudioPre(name)}
+              onHearFinal={(on) => void engine.hearFinalInPre(on)}
+              onAfv={(on) => engine.setAudioFollowVideo(on)}
+              onLimiter={(patch) => engine.setLimiter(patch)}
+              onMuteOut={() => void engine.toggleMasterMute()}
+            />
+          </div>
         </div>
       </main>
       {state.notice && (
