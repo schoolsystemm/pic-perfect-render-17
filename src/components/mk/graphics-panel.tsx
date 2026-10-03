@@ -14,6 +14,8 @@ const SHORT: Record<GfxId, string> = {
   ticker: "Ticker",
   clock: "Clock",
   badge: "Live Badge",
+  breaking: "Breaking",
+  score: "Scoreboard",
 };
 
 interface GraphicsPanelProps {
@@ -44,7 +46,7 @@ export function GraphicsPanel({ graphics: g, active }: GraphicsPanelProps) {
         </Link>
       </header>
 
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-4 gap-1">
         {GFX_LAYERS.map((l) => (
           <button
             key={l.id}
