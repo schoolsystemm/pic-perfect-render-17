@@ -1,282 +1,658 @@
-// Demo Mode: full switcher behaviour with no OBS present.
-import { EventBus, type Transport } from "./transport";
-import type { AudioChannel, MonitorType } from "./types";
+// MK VISION — shared domain types.
+// Kept free of UI and transport concerns so the same contracts can later back a
+// physical MK VISION PANEL hardware interface.
 
-const DEMO_SCENES = [
-  "Camera 1 Wide",
-  "Camera 2 Close",
-  "Camera 3 Guest",
-  "Camera 4 Presenter",
-  "Camera 5 Audience",
-  "Camera 6 Stage",
-  "Camera 7 Crowd",
-  "Camera 8 Remote",
+import { DEFAULT_MERGE, type MergePreset } from "./merge";
+import { DEFAULT_TAGS, type TagConfig } from "./tags";
+import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type AdPreset, type DskPlace, type FxConfig, type FxLayoutKind, type PipSlot, type PlacePos } from "./fx";
+
+export const CAM_COUNT = 8;
+export const DSK_COUNT = 2;
+
+export type CamIndex = number; // 0..7 -> CAM 1..CAM 8
+
+export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+
+/** OBS audio monitoring modes. */
+export type MonitorType = "none" | "monitorOnly" | "monitorAndOutput";
+
+export interface DskTarget {
+  /** Scene that contains the graphics source ("" = current program scene). */
+  scene: string;
+  /** Scene item toggled by the DSK button. */
+  source: string;
+  /** Spot + size picked by hand in Settings (null / missing = leave the item where OBS has it). */
+  place?: DskPlace | null;
+}
+
+export type Corner = "tl" | "tr" | "bl" | "br";
+export type GfxId =
+  "logo" | "lower" | "ticker" | "clock" | "badge" | "news" | "breaking" | "score" | "social" | "full";
+export const GFX_IDS: GfxId[] = [
+  "logo",
+  "lower",
+  "ticker",
+  "clock",
+  "badge",
+  "news",
+  "breaking",
+  "score",
+  "social",
+  "full",
 ];
 
-const DEMO_TRANSITIONS = ["Cut", "Fade", "Fade to Color", "Swipe", "Slide", "Stinger"];
-const MAIN = "Desktop Audio";
+/** What the full-screen layer shows. */
+export type FullKind =
+  "headline" | "quote" | "standings" | "countdown" | "announcement" | "credits";
+export const FULL_KINDS: { id: FullKind; label: string }[] = [
+  { id: "headline", label: "Headline card" },
+  { id: "quote", label: "Quote card" },
+  { id: "standings", label: "League standings" },
+  { id: "countdown", label: "Countdown timer" },
+  { id: "announcement", label: "Announcement" },
+  { id: "credits", label: "End credits" },
+];
 
-/** Animated fake camera frame so the monitors show "video" in Demo Mode. */
-function demoFrame(scene: string): string {
-  const i = Math.max(0, DEMO_SCENES.indexOf(scene));
-  const hue = (i * 43 + 200) % 360;
-  const t = (Date.now() % 4000) / 4000;
-  const x = Math.round(t * 640);
-  const svg =
-    `<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'>` +
-    `<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>` +
-    `<stop offset='0' stop-color='hsl(${hue},55%,28%)'/><stop offset='1' stop-color='hsl(${(hue + 60) % 360},60%,12%)'/>` +
-    `</linearGradient></defs>` +
-    `<rect width='640' height='360' fill='url(#g)'/>` +
-    `<circle cx='${x}' cy='${180 + Math.round(Math.sin(t * 6.28) * 60)}' r='38' fill='hsl(${hue},80%,62%)' opacity='.85'/>` +
-    `<rect x='0' y='300' width='640' height='60' fill='black' opacity='.45'/>` +
-    `<text x='24' y='340' font-family='monospace' font-size='28' fill='white'>${scene}</text>` +
-    `<text x='616' y='40' font-family='monospace' font-size='16' fill='white' text-anchor='end' opacity='.7'>DEMO VIDEO</text>` +
-    `</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+/** How a graphic comes on screen. */
+export type GfxAnim = "slide" | "fade" | "wipe" | "scale" | "reveal";
+export const GFX_ANIMS: { id: GfxAnim; label: string }[] = [
+  { id: "slide", label: "Slide" },
+  { id: "fade", label: "Fade" },
+  { id: "wipe", label: "Wipe" },
+  { id: "scale", label: "Pop" },
+  { id: "reveal", label: "Reveal" },
+];
+
+export interface LowerPreset {
+  name: string;
+  title: string;
 }
 
-export class DemoTransport implements Transport {
-  private bus = new EventBus();
-  private program: string = DEMO_SCENES[0]!;
-  private preview: string = DEMO_SCENES[1]!;
-  private dsk = [false, false];
-  private duration = 500;
-  private autoTimer: ReturnType<typeof setTimeout> | null = null;
-  private meterTimer: ReturnType<typeof setInterval> | null = null;
-  private channels: AudioChannel[] = [
-    { name: MAIN, db: -6, muted: false, monitor: "monitorOnly", stream: true, pre: true },
-    { name: "CAM 1 Mic", db: -6, muted: false, monitor: "none", stream: true, pre: true },
-    { name: "CAM 2 Mic", db: -8, muted: false, monitor: "none", stream: true, pre: true },
-    { name: "Presenter Lav", db: -4, muted: false, monitor: "monitorOnly", stream: true, pre: true },
-    { name: "Music Bed", db: -18, muted: true, monitor: "none", stream: true, pre: true },
-  ];
-  private record = false;
-  private limiter = { on: false, threshold: -6 };
+export type GfxFont = "sans" | "condensed" | "serif" | "mono";
+export const GFX_FONTS: { id: GfxFont; label: string }[] = [
+  { id: "sans", label: "Sans" },
+  { id: "condensed", label: "Condensed" },
+  { id: "serif", label: "Serif" },
+  { id: "mono", label: "Mono" },
+];
 
-  subscribe = this.bus.subscribe;
+export type LowerStyle = "bar" | "glass" | "underline" | "box" | "presenter" | "guest" | "sport";
+export const LOWER_STYLES: { id: LowerStyle; label: string }[] = [
+  { id: "presenter", label: "Presenter (news)" },
+  { id: "guest", label: "Guest strap" },
+  { id: "sport", label: "Player ID (sport)" },
+  { id: "bar", label: "Classic bar" },
+  { id: "glass", label: "Glass" },
+  { id: "underline", label: "Underline" },
+  { id: "box", label: "Boxed" },
+];
 
-  async connect() {
-    this.bus.emit({ type: "status", status: "connecting" });
-    this.bus.emit({ type: "scenes", scenes: DEMO_SCENES });
-    this.bus.emit({ type: "transitions", transitions: DEMO_TRANSITIONS });
-    this.bus.emit({ type: "studioMode", enabled: true });
-    this.bus.emit({ type: "status", status: "connected", message: "DEMO MODE" });
-    this.bus.emit({ type: "programScene", scene: this.program });
-    this.bus.emit({ type: "previewScene", scene: this.preview });
-    this.bus.emit({ type: "mainAudio", name: MAIN });
-    this.bus.emit({ type: "audio", channels: this.channels.map((c) => ({ ...c })) });
-    this.bus.emit({ type: "stream", active: false });
-    this.bus.emit({ type: "record", active: false });
-    this.meterTimer = setInterval(() => {
-      const levels: Record<string, number> = {};
-      let gr = 0;
-      for (const c of this.channels) {
-        if (c.muted) {
-          levels[c.name] = -100;
-          continue;
-        }
-        // Raw program-level peaks, hot enough to hit the limiter now and then.
-        const base = -18 + c.db * 0.8;
-        let peak = Math.min(3, base + (Math.random() - 0.3) * 16);
-        if (this.limiter.on && c.stream && peak > this.limiter.threshold) {
-          // Brick-wall: the ceiling holds, a hair of overshoot like a real look-ahead limiter.
-          gr = Math.max(gr, peak - this.limiter.threshold);
-          peak = this.limiter.threshold + Math.random() * 0.15;
-        }
-        levels[c.name] = peak;
-      }
-      this.bus.emit({ type: "levels", levels });
-      this.bus.emit({ type: "limiter", gr: this.limiter.on ? gr : 0 });
-    }, 80);
-  }
+export type TickerStyle = "solid" | "glass" | "outline" | "news" | "broadcast";
+export const TICKER_STYLES: { id: TickerStyle; label: string }[] = [
+  { id: "broadcast", label: "Broadcast bar (gloss)" },
+  { id: "news", label: "News bar" },
+  { id: "solid", label: "Solid" },
+  { id: "glass", label: "Glass" },
+  { id: "outline", label: "Outline" },
+];
 
-  async setInputVolume(name: string, db: number) {
-    const c = this.channels.find((x) => x.name === name);
-    if (c) c.db = db;
-  }
+export type BadgeStyle = "solid" | "outline" | "glass" | "location" | "gloss";
+export const BADGE_STYLES: { id: BadgeStyle; label: string }[] = [
+  { id: "gloss", label: "Gloss LIVE" },
+  { id: "location", label: "Live + location" },
+  { id: "solid", label: "Solid" },
+  { id: "outline", label: "Outline" },
+  { id: "glass", label: "Glass" },
+];
 
-  async setInputMute(name: string, muted: boolean) {
-    const c = this.channels.find((x) => x.name === name);
-    if (c) c.muted = muted;
-    this.bus.emit({ type: "audioChannel", name, muted });
-  }
+export type ClockStyle = "solid" | "split";
+export const CLOCK_STYLES: { id: ClockStyle; label: string }[] = [
+  { id: "split", label: "Label + time" },
+  { id: "solid", label: "Solid" },
+];
 
-  async setInputMonitor(name: string, monitor: MonitorType) {
-    const c = this.channels.find((x) => x.name === name);
-    if (c) c.monitor = monitor;
-    this.bus.emit({ type: "audioChannel", name, monitor });
-  }
-
-  async setInputStream(name: string, enabled: boolean) {
-    const c = this.channels.find((x) => x.name === name);
-    if (c) c.stream = enabled;
-    this.bus.emit({ type: "audioChannel", name, stream: enabled });
-  }
-
-  async setInputPre(name: string, enabled: boolean) {
-    const c = this.channels.find((x) => x.name === name);
-    if (c) c.pre = enabled;
-    this.bus.emit({ type: "audioChannel", name, pre: enabled });
-  }
-
-  async setLimiter(_inputs: string[], on: boolean, threshold: number) {
-    this.limiter = { on, threshold };
-  }
-
-  async setStreaming(on: boolean) {
-    this.bus.emit({ type: "stream", active: on, durationMs: 0 });
-  }
-
-  async setRecording(on: boolean) {
-    this.record = on;
-    this.bus.emit({ type: "record", active: on, durationMs: on ? 0 : undefined });
-  }
-
-  async setRecordPaused(paused: boolean) {
-    if (!this.record) return;
-    this.bus.emit({ type: "record", active: true, paused });
-  }
-
-  async disconnect() {
-    if (this.meterTimer) clearInterval(this.meterTimer);
-    if (this.autoTimer) clearTimeout(this.autoTimer);
-    this.meterTimer = null;
-    this.autoTimer = null;
-    this.bus.emit({ type: "status", status: "disconnected" });
-  }
-
-  async getScenes() {
-    return DEMO_SCENES;
-  }
-
-  async getTransitions() {
-    return DEMO_TRANSITIONS;
-  }
-
-  async getCurrentProgramScene() {
-    return this.program;
-  }
-
-  async getCurrentPreviewScene() {
-    return this.preview;
-  }
-
-  async setPreviewScene(scene: string) {
-    this.preview = scene;
-    this.bus.emit({ type: "previewScene", scene });
-  }
-
-  async setProgramScene(scene: string) {
-    this.program = scene;
-    this.bus.emit({ type: "programScene", scene });
-  }
-
-  private swap() {
-    const next = this.preview;
-    this.preview = this.program;
-    this.program = next;
-    this.bus.emit({ type: "programScene", scene: this.program });
-    this.bus.emit({ type: "previewScene", scene: this.preview });
-  }
-
-  async performCut() {
-    this.swap();
-  }
-
-  async performAutoTake() {
-    if (this.autoTimer) clearTimeout(this.autoTimer);
-    this.bus.emit({ type: "transition", active: true });
-    this.autoTimer = setTimeout(() => {
-      this.autoTimer = null;
-      this.swap();
-      this.bus.emit({ type: "transition", active: false });
-    }, this.duration);
-  }
-
-  async setTransition() {}
-
-  async setTransitionDuration(ms: number) {
-    this.duration = ms;
-  }
-
-  async setTBarPosition(position: number, release: boolean) {
-    if (release && position >= 1) {
-      this.swap();
-      this.bus.emit({ type: "transition", active: false });
-    }
-  }
-
-  // Picture effects have nothing to draw on in Demo Mode; the engine still runs the whole sequence.
-  async fxStage() {
-    return { width: 1920, height: 1080 };
-  }
-
-  async fxFrame(frame: Record<string, unknown>, scene?: string) {
-    const bus = scene ?? "";
-    const store = (this.liveItems[bus] ??= {});
-    for (const [name, r] of Object.entries(frame)) store[name] = !!r;
-  }
-
-  private liveItems: Record<string, Record<string, boolean>> = {};
-
-  async getSources() {
-    return [...DEMO_SCENES.map((name) => ({ name, kind: "scene" as const })), { name: "Ad Video", kind: "input" as const }, { name: "Ad Image", kind: "input" as const }];
-  }
-
-  async pipAssign() {}
-  async paneAssign() {}
-  async mergePrepare() {}
-  async tagSet() {}
-  async liveEnsure() {}
-  async liveRead(scene: string): Promise<Record<string, boolean>> {
-    return { ...(this.liveItems[scene] ?? {}) };
-  }
-
-  async fxCutTo(scene: string) {
-    this.program = scene;
-    this.bus.emit({ type: "programScene", scene });
-  }
-
-  async toggleDSK(index: number, on: boolean) {
-    this.dsk[index] = on;
-    this.bus.emit({ type: "dsk", index, on });
-  }
-
-  async getCanvas() {
-    return { width: 1920, height: 1080 };
-  }
-
-  async placeDSK() {}
-
-  async readItemTransform(): Promise<Record<string, unknown> | null> {
-    return { positionX: 0, positionY: 0, scaleX: 1, scaleY: 1, rotation: 0, alignment: 5, boundsType: "OBS_BOUNDS_NONE", boundsWidth: 0, boundsHeight: 0 };
-  }
-
-  async readDSK(): Promise<boolean | null> {
-    return null;
-  }
-
-  async playSound() {}
-  async stopSound() {}
-  async syncGraphics() {}
-  async setGraphicVisible() {}
-  async updateGraphic() {}
-  async readGraphics(): Promise<Record<string, boolean>> {
-    return {};
-  }
-
-  async getSceneItems(scene?: string) {
-    if (scene === "MK Graphics") return ["MK Logo", "MK Lower Third", "MK Ticker", "MK Clock", "MK Badge"];
-    return ["Lower Third", "Logo Bug", "Clock", "Score Bug"];
-  }
-
-  async getScreenshot(scene: string) {
-    return demoFrame(scene);
-  }
-
-  async resync() {
-    this.bus.emit({ type: "programScene", scene: this.program });
-    this.bus.emit({ type: "previewScene", scene: this.preview });
-  }
+/** A ready-made scrolling message: one tap loads it into the ticker and sends it on air. */
+export interface ScrollPreset {
+  name: string;
+  text: string;
+  label: string;
+  /** Seconds for one pass across the screen. */
+  speed: number;
+  direction: "left" | "right";
+  /** true = keeps repeating, false = runs once, then the bar leaves by itself. */
+  loop: boolean;
 }
+
+export const DEFAULT_SCROLLS: ScrollPreset[] = [
+  { name: "Welcome", label: "LIVE", text: "Welcome to the broadcast — stay tuned for more", speed: 24, direction: "left", loop: true },
+  { name: "Breaking", label: "BREAKING", text: "Breaking news: more details coming up shortly", speed: 20, direction: "left", loop: false },
+  { name: "Subscribe", label: "FOLLOW", text: "Like, share and subscribe so you never miss a live show", speed: 22, direction: "left", loop: false },
+  { name: "Sponsors", label: "THANKS", text: "This broadcast is brought to you by our sponsors and partners", speed: 26, direction: "left", loop: true },
+];
+
+/** One changing tag of a news story: the big main tag and the smaller tag below it. */
+export interface NewsTag {
+  main: string;
+  below: string;
+}
+
+export interface GraphicsConfig {
+  logo: {
+    image: string | null;
+    pos: Corner;
+    /** Hand-placed spot (0..1 across the free space). Wins over `pos` when set. */
+    at: PlacePos | null;
+    size: number;
+    opacity: number;
+    /** Station mark drawn as text when there is no image (empty = nothing). */
+    text: string;
+    textColor: string;
+    anim: GfxAnim;
+  };
+  lower: {
+    /** Hand-placed spot (0..1 across the free space). null = the default lower-third spot. */
+    at: PlacePos | null;
+    name: string;
+    title: string;
+    /** Jersey / shirt number, shown by the Player ID style. */
+    number: string;
+    accent: string;
+    /** Name-block colour of the Presenter and Player ID styles. */
+    primary: string;
+    presets: LowerPreset[];
+    size: number;
+    style: LowerStyle;
+    anim: GfxAnim;
+    bg: string;
+    bgOpacity: number;
+    text: string;
+    font: GfxFont;
+  };
+  ticker: {
+    /** Hand-placed spot; only the vertical (y) part is used — the bar always spans the width. null = use `pos`. */
+    at: PlacePos | null;
+    text: string;
+    label: string;
+    speed: number;
+    accent: string;
+    /** Bar height + text size, percent (100 = default). */
+    size: number;
+    /** Which way the text scrolls. */
+    direction: "left" | "right";
+    /** Bar sits on the bottom or the top of the picture. */
+    pos: "bottom" | "top";
+    style: TickerStyle;
+    bg: string;
+    bgOpacity: number;
+    textColor: string;
+    font: GfxFont;
+    /** true = scroll repeats forever, false = one pass, then the bar leaves. */
+    loop: boolean;
+    /** Ready-made scrolling messages (tap one to go on air). */
+    scrolls: ScrollPreset[];
+  };
+  clock: {
+    /** Small tag before the time (EAT, GMT, LOCAL…). Shown by the Label + time style. */
+    label: string;
+    accent: string;
+    style: ClockStyle;
+    anim: GfxAnim;
+    pos: Corner;
+    /** Hand-placed spot (0..1 across the free space). Wins over `pos` when set. */
+    at: PlacePos | null;
+    seconds: boolean;
+    h24: boolean;
+    size: number;
+    bg: string;
+    bgOpacity: number;
+    textColor: string;
+    font: GfxFont;
+  };
+  badge: {
+    text: string;
+    /** Place name beside the LIVE tag (Live + location style). */
+    location: string;
+    locBg: string;
+    pos: Corner;
+    at: PlacePos | null;
+    color: string;
+    size: number;
+    style: BadgeStyle;
+    anim: GfxAnim;
+    textColor: string;
+    font: GfxFont;
+  };
+  /** News tags: an "updates" tag over a main tag over a below tag. Cycles the story's tags by itself. */
+  news: {
+    /** Small "updates" tag above the main tag (LIVE UPDATES, POLITICS…). Empty = hidden. */
+    kicker: string;
+    /** The changing tags of one story. Each one is a main tag + a below tag. */
+    tags: NewsTag[];
+    /** Seconds each tag stays up before the next one comes in. */
+    seconds: number;
+    /** true = keeps going round the tags, false = plays once and holds the last tag. */
+    loop: boolean;
+    /** Tag to start on (0 = the first). */
+    start: number;
+    /** Bumped by the News Desk to restart the cycle (a changed number makes OBS reload the page). */
+    run: number;
+    /** Main tag block colour. */
+    primary: string;
+    /** Updates tag + accent line colour. */
+    accent: string;
+    /** Below tag strip colour. */
+    bg: string;
+    textColor: string;
+    size: number;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
+  /** Full-width breaking-news banner. */
+  breaking: {
+    label: string;
+    headline: string;
+    /** Label block colour. */
+    accent: string;
+    /** Headline strip colour. */
+    bg: string;
+    textColor: string;
+    size: number;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
+  /** Match scoreboard bug. */
+  score: {
+    home: string;
+    away: string;
+    homeScore: string;
+    awayScore: string;
+    clock: string;
+    pos: Corner;
+    at: PlacePos | null;
+    size: number;
+    /** Team blocks. */
+    primary: string;
+    /** Clock block. */
+    accent: string;
+    /** Text colour on the score + clock blocks. */
+    bg: string;
+    textColor: string;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
+  /** Social handle strap (bottom right). */
+  social: {
+    platform: string;
+    handle: string;
+    /** Platform block colour. */
+    accent: string;
+    /** Handle block colour. */
+    bg: string;
+    textColor: string;
+    size: number;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
+  /** Full-screen cards: headline, quote, standings, countdown, announcement, credits. */
+  full: {
+    kind: FullKind;
+    kicker: string;
+    headline: string;
+    body: string;
+    quote: string;
+    author: string;
+    title: string;
+    subtitle: string;
+    /** Standings rows, "Team, P, Pts" one per line. */
+    rows: string;
+    /** Countdown start, seconds (counts from the moment the card goes on air). */
+    seconds: number;
+    /** Credits lines, "Role — Name" one per line. */
+    lines: string;
+    /** Seconds for the credits roll. */
+    speed: number;
+    primary: string;
+    secondary: string;
+    accent: string;
+    textColor: string;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
+}
+
+export const DEFAULT_GRAPHICS: GraphicsConfig = {
+  logo: { image: null, pos: "tr", at: null, size: 12, opacity: 100, text: "", textColor: "#ffffff", anim: "fade" },
+  lower: {
+    at: null,
+    name: "Guest Name",
+    title: "Title / Role",
+    number: "10",
+    accent: "#f5a623",
+    primary: "#0b4fa8",
+    presets: [],
+    size: 100,
+    style: "bar",
+    anim: "slide",
+    bg: "#0a0c10",
+    bgOpacity: 90,
+    text: "#ffffff",
+    font: "sans",
+  },
+  ticker: {
+    at: null,
+    text: "Welcome to the broadcast — stay tuned for more",
+    label: "LIVE",
+    speed: 22,
+    accent: "#e5322d",
+    size: 100,
+    direction: "left",
+    pos: "bottom",
+    style: "solid",
+    bg: "#0a0c10",
+    bgOpacity: 94,
+    textColor: "#ffffff",
+    font: "sans",
+    loop: true,
+    scrolls: DEFAULT_SCROLLS,
+  },
+  clock: { label: "", accent: "#f5b700", style: "solid", anim: "fade", pos: "br", at: null, seconds: true, h24: true, size: 100, bg: "#0a0c10", bgOpacity: 88, textColor: "#ffffff", font: "mono" },
+  badge: { text: "LIVE", location: "", locBg: "#0a1628", pos: "tl", at: null, color: "#e5322d", size: 100, style: "solid", anim: "fade", textColor: "#ffffff", font: "sans" },
+  news: {
+    kicker: "LIVE UPDATES",
+    tags: [
+      { main: "Main tag goes here", below: "Below tag goes here" },
+      { main: "Second main tag", below: "Second below tag" },
+    ],
+    seconds: 6,
+    loop: true,
+    start: 0,
+    run: 0,
+    primary: "#e8e8e8",
+    accent: "#cf0102",
+    bg: "#1d1d1d",
+    textColor: "#262626",
+    size: 100,
+    font: "condensed",
+    anim: "slide",
+  },
+  breaking: {
+    label: "BREAKING NEWS",
+    headline: "Parliament passes new climate bill after overnight session",
+    accent: "#d0161d",
+    bg: "#ffffff",
+    textColor: "#111111",
+    size: 100,
+    font: "condensed",
+    anim: "slide",
+  },
+  score: {
+    home: "LEO",
+    away: "RHI",
+    homeScore: "0",
+    awayScore: "0",
+    clock: "00:00",
+    pos: "tl",
+    // Top-centre by default so it never lands on the logo, LIVE badge or clock corners.
+    at: { x: 0.5, y: 0.05 },
+    size: 100,
+    primary: "#0f8a4a",
+    accent: "#d7ff3a",
+    bg: "#0b130f",
+    textColor: "#ffffff",
+    font: "condensed",
+    anim: "slide",
+  },
+  social: {
+    platform: "FOLLOW US",
+    handle: "@campustv",
+    accent: "#f5b700",
+    bg: "#0a1628",
+    textColor: "#ffffff",
+    size: 100,
+    font: "condensed",
+    anim: "slide",
+  },
+  full: {
+    kind: "headline",
+    kicker: "TOP STORY",
+    headline: "City unveils 10-year plan for public transport",
+    body: "New rapid bus corridors and commuter rail upgrades will connect five counties by 2036.",
+    quote: "We will not build the future by repeating the past.",
+    author: "Minister of Education",
+    title: "UP NEXT",
+    subtitle: "The Sports Hour — 8:00 PM",
+    rows: "Leopards, 12, 28\nRhinos, 12, 25\nFalcons, 12, 22\nSharks, 12, 19\nEagles, 12, 15",
+    seconds: 300,
+    lines:
+      "Producer — Grace Njeri\nDirector — Kevin Ouma\nGraphics — Faith Akinyi\nCamera — Daniel Kiprop\nSound — Lucy Mwende",
+    speed: 20,
+    primary: "#0b4fa8",
+    secondary: "#0a1628",
+    accent: "#f5b700",
+    textColor: "#ffffff",
+    font: "condensed",
+    anim: "fade",
+  },
+};
+
+export const IDLE_GFX: Record<GfxId, boolean> = {
+  logo: false,
+  lower: false,
+  ticker: false,
+  clock: false,
+  badge: false,
+  news: false,
+  breaking: false,
+  score: false,
+  social: false,
+  full: false,
+};
+
+export interface MkConfig {
+  host: string;
+  port: number;
+  password: string;
+  /** Scene name mapped to each CAM button, index 0 = CAM 1. */
+  camScenes: (string | null)[];
+  /** DSK 1 and DSK 2 targets. */
+  dsks: DskTarget[];
+  transition: string;
+  transitionDuration: number;
+  demoMode: boolean;
+  autoConnect: boolean;
+  shortcuts: Shortcuts;
+  /** Audio follows video: cam-named audio inputs unmute when their CAM is on air. */
+  audioFollowVideo: boolean;
+  /** Show real OBS video in the Preview / Program monitors. */
+  liveVideo: boolean;
+  /** Monitor refresh rate (frames per second, OBS screenshots). */
+  monitorFps: number;
+  graphics: GraphicsConfig;
+  /** The ONE scene the MK Graphics scene is nested into ("" = not nested anywhere). */
+  graphicsScene: string;
+  /** WHEP address of the audio feed from the OBS PC ("" = derive from the OBS host). */
+  listenUrl: string;
+  /** Volume of the audio feed on this device, 0..1. */
+  listenVolume: number;
+  /** Master limiter: an OBS Limiter filter on every input that goes to the final mix. */
+  limiter: LimiterConfig;
+  /** Audio inputs the operator hid from the mixer (they stay in OBS and on the mix). */
+  hiddenAudio: string[];
+  /** Pre-planned run of show (titles + planned lengths) shown in the Tools panel. */
+  rundown: RundownItem[];
+  /** Squeeze / PiP / Merge settings. */
+  fx: FxConfig;
+  /** PIP 1 / PIP 2: persistent scene assignment + position + size. */
+  pips: PipSlot[];
+  /** The Squeeze Merge that is selected right now (a copy of adPresets[adActive]; the engine works with this one). */
+  ad: AdConfig;
+  /** Every Squeeze Merge made in Settings; the live screen just picks one from a drop-down. Always at least one. */
+  adPresets: AdPreset[];
+  adActive: number;
+  /** Split-screen Merge looks (2..6 panes + borders), picked on the live screen, set up and saved in the Merge editor. Always at least one. */
+  mergePresets: MergePreset[];
+  mergeActive: number;
+  /** Location tags: one label per cam, shown at the top of each pane (or where you place it). */
+  tags: TagConfig;
+}
+
+/** What the live compositor is doing in OBS right now (confirmed from OBS, not assumed). */
+export interface LiveState {
+  /** OBS program is one of the MK LIVE buses. */
+  on: boolean;
+  /** PIP 1 / PIP 2 are showing in OBS. */
+  pip: boolean[];
+  /** Squeeze Merge is in (advertisement showing). */
+  sqm: boolean;
+  /** Split-screen Merge is showing (panes + borders in the live buses; PIPs / DSKs / the ad ride on top). */
+  merge: boolean;
+  /** Location tags are showing (one per pane while Merge is on, otherwise one for the cam on air). */
+  tags: boolean;
+  /** The scene shown in each pane right now (only while `merge`). */
+  mergeScenes: string[];
+  /** OBS scene names of the program / preview bus (for the monitors). */
+  progBus: string | null;
+  previewBus: string | null;
+}
+
+export const IDLE_LIVE: LiveState = { on: false, pip: [false, false], sqm: false, merge: false, tags: false, mergeScenes: [], progBus: null, previewBus: null };
+
+export interface RundownItem {
+  text: string;
+  /** Planned length in seconds. 0 = untimed (counts up). */
+  secs: number;
+}
+
+export interface LimiterConfig {
+  on: boolean;
+  /** Ceiling in dBFS. */
+  threshold: number;
+}
+
+export const DEFAULT_LIMITER: LimiterConfig = { on: false, threshold: -6 };
+export const LIMITER_MIN = -30;
+export const LIMITER_MAX = 0;
+
+export interface Shortcuts {
+  cut: string;
+  autoTake: string;
+  dsk: string;
+  dsk2: string;
+  /** Keys for CAM 1..8 preview selection. */
+  cams: string[];
+}
+
+export const TRANSITION_DURATIONS = [300, 500, 750, 1000, 1500, 2000];
+/** Quick rate buttons on the transition panel. */
+export const RATE_BUTTONS = [300, 500, 1000, 1500, 2000];
+export const MONITOR_FPS_OPTIONS = [5, 8, 10, 15, 20];
+
+export const DEFAULT_SHORTCUTS: Shortcuts = {
+  cut: "x",
+  autoTake: " ",
+  dsk: "d",
+  dsk2: "f",
+  cams: ["1", "2", "3", "4", "5", "6", "7", "8"],
+};
+
+export const DEFAULT_DSKS: DskTarget[] = Array.from({ length: DSK_COUNT }, () => ({
+  scene: "",
+  source: "",
+}));
+
+export const DEFAULT_CONFIG: MkConfig = {
+  host: "",
+  port: 4455,
+  password: "",
+  camScenes: Array.from({ length: CAM_COUNT }, () => null),
+  dsks: DEFAULT_DSKS,
+  transition: "Fade",
+  transitionDuration: 500,
+  demoMode: true,
+  autoConnect: false,
+  shortcuts: DEFAULT_SHORTCUTS,
+  audioFollowVideo: false,
+  liveVideo: true,
+  monitorFps: 10,
+  graphics: DEFAULT_GRAPHICS,
+  graphicsScene: "",
+  listenUrl: "",
+  listenVolume: 1,
+  limiter: DEFAULT_LIMITER,
+  hiddenAudio: [],
+  rundown: [],
+  fx: DEFAULT_FX,
+  pips: DEFAULT_PIPS,
+  ad: DEFAULT_AD,
+  adPresets: [{ name: "Squeeze Merge 1", ad: DEFAULT_AD }],
+  adActive: 0,
+  mergePresets: [{ name: "Split 2", merge: DEFAULT_MERGE }],
+  mergeActive: 0,
+  tags: DEFAULT_TAGS,
+};
+
+export interface SwitcherState {
+  status: ConnectionStatus;
+  statusMessage: string;
+  demo: boolean;
+  /** CAM index currently on air, or null when program scene is unmapped. */
+  program: CamIndex | null;
+  preview: CamIndex | null;
+  programScene: string | null;
+  previewScene: string | null;
+  /** DSK 1 / DSK 2 on-air flags. */
+  dskActive: boolean[];
+  /** Built-in graphics on/off (independent of the DSKs). */
+  gfxActive: Record<GfxId, boolean>;
+  tBar: number; // 0..1
+  transitioning: boolean;
+  /** Picture effects: `running` while one animates, `layout` while PiP / Merge is held on air. */
+  fx: { running: boolean; layout: FxLayoutKind | null };
+  live: LiveState;
+  scenes: string[];
+  transitions: string[];
+  studioMode: boolean;
+  config: MkConfig;
+  audio: AudioChannel[];
+  /** Name of the MAIN (desktop / master) audio input, if OBS has one. */
+  mainAudio: string | null;
+  /** Peak level in dB per input name (fast-changing telemetry). */
+  levels: Record<string, number>;
+  stream: OutputState;
+  record: OutputState;
+  /** Short-lived operator message (e.g. "DSK 1 has no source set"). */
+  notice: string | null;
+  /** Limiter gain reduction in dB (>= 0) when the backend reports it, else null (estimated). */
+  gr: number | null;
+  /** MUTE OUT is holding every final-mix input muted. */
+  masterMuted: boolean;
+}
+
+export interface AudioChannel {
+  name: string;
+  /** Fader in dB, -60..+6 (-60 = -inf). */
+  db: number;
+  muted: boolean;
+  /** OBS monitoring mode (what the operator hears locally). */
+  monitor: MonitorType;
+  /** Goes to the FINAL mix: what YouTube / the recording get (OBS audio track 1). */
+  stream: boolean;
+  /** Goes to the PRE-LISTEN mix (OBS audio track 2) — what the Listen button plays. */
+  pre: boolean;
+}
+
+export interface OutputState {
+  active: boolean;
+  paused: boolean;
+  /** Epoch ms when the running clock started (null when stopped/paused). */
+  since: number | null;
+  /** Elapsed ms accumulated before `since`. */
+  baseMs: number;
+}
+
+export const IDLE_OUTPUT: OutputState = { active: false, paused: false, since: null, baseMs: 0 };
+
+export const FADER_MIN = -60;
+export const FADER_MAX = 6;
+
+export const camLabel = (index: CamIndex) => `CAM ${index + 1}`;
