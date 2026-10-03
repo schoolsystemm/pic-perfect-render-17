@@ -14,6 +14,7 @@ const SHORT: Record<GfxId, string> = {
   ticker: "Ticker",
   clock: "Clock",
   badge: "Live Badge",
+  news: "News Tags",
   breaking: "Breaking",
   score: "Scoreboard",
   social: "Social",
