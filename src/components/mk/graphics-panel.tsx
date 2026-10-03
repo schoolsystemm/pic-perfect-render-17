@@ -2,10 +2,11 @@ import { Link } from "@tanstack/react-router";
 import { Play, X } from "lucide-react";
 import { useState } from "react";
 
+import { TagsEditor } from "@/components/mk/tags-editor";
 import { GFX_LAYERS } from "@/lib/mk/graphics";
 import { useGfxLibrary } from "@/lib/mk/gfx-library";
 import type { GfxId, GraphicsConfig } from "@/lib/mk/types";
-import { engine } from "@/lib/mk/use-switcher";
+import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { cn } from "@/lib/utils";
 
 const SHORT: Record<GfxId, string> = {
@@ -28,6 +29,8 @@ interface GraphicsPanelProps {
 /** Take graphics to air, load saved designs, type the next guest. Full design work is in the Studio. */
 export function GraphicsPanel({ graphics: g, active }: GraphicsPanelProps) {
   const saved = useGfxLibrary();
+  const live = useSwitcher();
+  const tagsOn = live.live.tags;
   const [msg, setMsg] = useState("");
   const { scrolls } = g.ticker;
 
@@ -88,6 +91,23 @@ export function GraphicsPanel({ graphics: g, active }: GraphicsPanelProps) {
           })}
           {saved.length === 0 && <option disabled>Nothing saved yet — build one in Studio</option>}
         </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1">
+        <button
+          type="button"
+          disabled={live.fx.running}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            void engine.toggleTags();
+          }}
+          aria-pressed={tagsOn}
+          title={tagsOn ? "Location tags are ON AIR — tap to take off" : "Take the location tags to air (one per pane with MERGE, otherwise for the cam on air)"}
+          className={cn("mk-button flex h-8 min-w-0 items-center justify-center truncate rounded-[3px] px-0.5 text-[10px] tracking-[0.03em]", tagsOn && "mk-lit-program")}
+        >
+          Location Tags
+        </button>
+        <TagsEditor />
       </div>
 
       <div className="grid grid-cols-2 gap-1">
