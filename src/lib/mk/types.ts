@@ -134,6 +134,8 @@ export const DEFAULT_SCROLLS: ScrollPreset[] = [
 export interface NewsTag {
   main: string;
   below: string;
+  /** true = FULL TITLE: one big title bar, no lower tag. false/absent = title + lower tag (a tag with no lower text is a full title too). */
+  full?: boolean;
 }
 
 export interface GraphicsConfig {
@@ -360,8 +362,8 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
   news: {
     kicker: "LIVE UPDATES",
     tags: [
-      { main: "Main tag goes here", below: "Below tag goes here" },
-      { main: "Second main tag", below: "Second below tag" },
+      { main: "Title with a lower tag goes here", below: "Lower tag goes here" },
+      { main: "Full title goes here, on one big bar", below: "", full: true },
     ],
     seconds: 6,
     loop: true,
