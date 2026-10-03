@@ -2022,6 +2022,42 @@ export class SwitcherEngine {
     }, 400);
   }
 
+  /**
+   * Graphics Rundown TAKE / UPDATE: put new content on a layer, push it to OBS right now
+   * (no waiting for the typing delay) and make sure the layer is on air.
+   */
+  async airGraphic<K extends GfxId>(
+    id: K,
+    patch: Partial<GraphicsConfig[K]> & { animMs?: number },
+  ): Promise<boolean> {
+    const g = this.state.config.graphics;
+    this.updateConfig({ graphics: { ...g, [id]: { ...g[id], ...patch } } as GraphicsConfig });
+    const pending = this.gfxTimers[id];
+    if (pending) clearTimeout(pending);
+    if (!this.transport) {
+      this.notice("Not connected");
+      return false;
+    }
+    if (id === "ticker") this.cancelScrollTimer();
+    const wasOn = this.state.gfxActive[id];
+    this.set({ gfxActive: { ...this.state.gfxActive, [id]: true } });
+    try {
+      if (!this.state.demo)
+        await this.transport.updateGraphic(gfxName(id), layerUrl(id, this.state.config.graphics));
+      await this.transport.setGraphicVisible(gfxName(id), true);
+      return true;
+    } catch {
+      this.set({ gfxActive: { ...this.state.gfxActive, [id]: wasOn } });
+      this.notice("Graphics not set up in OBS yet — Settings → Graphics → Set up");
+      return false;
+    }
+  }
+
+  /** Take a graphics layer off air (does nothing when it is already off). */
+  async clearGraphic(id: GfxId) {
+    if (this.state.gfxActive[id]) await this.toggleGraphic(id);
+  }
+
   /** Take a graphics layer to air / off air. */
   async toggleGraphic(id: GfxId) {
     if (!this.transport) {

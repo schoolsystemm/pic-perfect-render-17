@@ -601,6 +601,23 @@ export class ObsTransport implements Transport {
     const scenes = await this.getScenes();
     if (!scenes.includes(GFX_SCENE)) await this.obs.call("CreateScene", { sceneName: GFX_SCENE });
     for (const layer of layers) await this.ensureBrowser(GFX_SCENE, layer.name, layer.url, w, h);
+    // Keep the stacking order = layer order (last = on top). New layers are created on top of
+    // the stack, which would put e.g. Full Screen above Breaking.
+    for (const [index, layer] of layers.entries()) {
+      try {
+        const { sceneItemId } = await this.obs.call("GetSceneItemId", {
+          sceneName: GFX_SCENE,
+          sourceName: layer.name,
+        });
+        await this.obs.call("SetSceneItemIndex", {
+          sceneName: GFX_SCENE,
+          sceneItemId,
+          sceneItemIndex: index,
+        });
+      } catch {
+        /* ordering is cosmetic — never block a save on it */
+      }
+    }
     this.gfxIds.clear();
     // Nest the graphics scene into the chosen scene(s) only (once each).
     for (const scene of targetScenes) {

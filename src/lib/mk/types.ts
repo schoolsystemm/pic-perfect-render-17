@@ -25,8 +25,31 @@ export interface DskTarget {
 }
 
 export type Corner = "tl" | "tr" | "bl" | "br";
-export type GfxId = "logo" | "lower" | "ticker" | "clock" | "badge" | "breaking" | "score";
-export const GFX_IDS: GfxId[] = ["logo", "lower", "ticker", "clock", "badge", "breaking", "score"];
+export type GfxId =
+  "logo" | "lower" | "ticker" | "clock" | "badge" | "breaking" | "score" | "social" | "full";
+export const GFX_IDS: GfxId[] = [
+  "logo",
+  "lower",
+  "ticker",
+  "clock",
+  "badge",
+  "breaking",
+  "score",
+  "social",
+  "full",
+];
+
+/** What the full-screen layer shows. */
+export type FullKind =
+  "headline" | "quote" | "standings" | "countdown" | "announcement" | "credits";
+export const FULL_KINDS: { id: FullKind; label: string }[] = [
+  { id: "headline", label: "Headline card" },
+  { id: "quote", label: "Quote card" },
+  { id: "standings", label: "League standings" },
+  { id: "countdown", label: "Countdown timer" },
+  { id: "announcement", label: "Announcement" },
+  { id: "credits", label: "End credits" },
+];
 
 /** How a graphic comes on screen. */
 export type GfxAnim = "slide" | "fade" | "wipe" | "scale" | "reveal";
@@ -222,6 +245,44 @@ export interface GraphicsConfig {
     font: GfxFont;
     anim: GfxAnim;
   };
+  /** Social handle strap (bottom right). */
+  social: {
+    platform: string;
+    handle: string;
+    /** Platform block colour. */
+    accent: string;
+    /** Handle block colour. */
+    bg: string;
+    textColor: string;
+    size: number;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
+  /** Full-screen cards: headline, quote, standings, countdown, announcement, credits. */
+  full: {
+    kind: FullKind;
+    kicker: string;
+    headline: string;
+    body: string;
+    quote: string;
+    author: string;
+    title: string;
+    subtitle: string;
+    /** Standings rows, "Team, P, Pts" one per line. */
+    rows: string;
+    /** Countdown start, seconds (counts from the moment the card goes on air). */
+    seconds: number;
+    /** Credits lines, "Role — Name" one per line. */
+    lines: string;
+    /** Seconds for the credits roll. */
+    speed: number;
+    primary: string;
+    secondary: string;
+    accent: string;
+    textColor: string;
+    font: GfxFont;
+    anim: GfxAnim;
+  };
 }
 
 export const DEFAULT_GRAPHICS: GraphicsConfig = {
@@ -288,6 +349,37 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     font: "condensed",
     anim: "slide",
   },
+  social: {
+    platform: "FOLLOW US",
+    handle: "@campustv",
+    accent: "#f5b700",
+    bg: "#0a1628",
+    textColor: "#ffffff",
+    size: 100,
+    font: "condensed",
+    anim: "slide",
+  },
+  full: {
+    kind: "headline",
+    kicker: "TOP STORY",
+    headline: "City unveils 10-year plan for public transport",
+    body: "New rapid bus corridors and commuter rail upgrades will connect five counties by 2036.",
+    quote: "We will not build the future by repeating the past.",
+    author: "Minister of Education",
+    title: "UP NEXT",
+    subtitle: "The Sports Hour — 8:00 PM",
+    rows: "Leopards, 12, 28\nRhinos, 12, 25\nFalcons, 12, 22\nSharks, 12, 19\nEagles, 12, 15",
+    seconds: 300,
+    lines:
+      "Producer — Grace Njeri\nDirector — Kevin Ouma\nGraphics — Faith Akinyi\nCamera — Daniel Kiprop\nSound — Lucy Mwende",
+    speed: 20,
+    primary: "#0b4fa8",
+    secondary: "#0a1628",
+    accent: "#f5b700",
+    textColor: "#ffffff",
+    font: "condensed",
+    anim: "fade",
+  },
 };
 
 export const IDLE_GFX: Record<GfxId, boolean> = {
@@ -298,6 +390,8 @@ export const IDLE_GFX: Record<GfxId, boolean> = {
   badge: false,
   breaking: false,
   score: false,
+  social: false,
+  full: false,
 };
 
 export interface MkConfig {

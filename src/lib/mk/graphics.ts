@@ -13,7 +13,9 @@ export const GFX_LAYERS: { id: GfxId; name: string; label: string }[] = [
   { id: "clock", name: "MK Clock", label: "Clock" },
   { id: "badge", name: "MK Badge", label: "Live Badge" },
   // Newer layers go last: later = higher in the OBS scene, so Breaking sits on top of everything.
+  { id: "social", name: "MK Social", label: "Social" },
   { id: "score", name: "MK Scoreboard", label: "Scoreboard" },
+  { id: "full", name: "MK Full Screen", label: "Full Screen" },
   { id: "breaking", name: "MK Breaking", label: "Breaking" },
 ];
 
@@ -89,6 +91,12 @@ const placeCss = (at: PlacePos, k = 1) => {
   return `position:absolute;left:${x}%;top:${y}%;transform-origin:0 0;transform:scale(${k}) translate(-${x}%,-${y}%)`;
 };
 
+/** Entrance time in ms. Set per item by the Graphics Rundown; 600 when not set. */
+const msOf = (cfg: unknown) => {
+  const n = Number((cfg as { animMs?: unknown } | null)?.animMs);
+  return Number.isFinite(n) ? Math.max(100, Math.min(3000, n)) : 600;
+};
+
 const scale = (n: number) => Math.max(0.3, Math.min(3, (Number(n) || 100) / 100));
 
 const page = (css: string, body: string, script = "") =>
@@ -146,7 +154,7 @@ function logo(g: GraphicsConfig) {
       ? `<div class="m">${esc(mark)}</div>`
       : "";
   return page(
-    `.sc{${where}}${enter(g.logo.anim, sideOf(pos, at))}.m{opacity:${op};color:${tc};border:${(w * 0.0175).toFixed(2)}vw solid ${tc};font-size:${(w * 0.21).toFixed(2)}vw;font-weight:800;letter-spacing:.08em;padding:.05em .35em;white-space:nowrap}`,
+    `.sc{${where}}${enter(g.logo.anim, sideOf(pos, at), msOf(g.logo))}.m{opacity:${op};color:${tc};border:${(w * 0.0175).toFixed(2)}vw solid ${tc};font-size:${(w * 0.21).toFixed(2)}vw;font-weight:800;letter-spacing:.08em;padding:.05em .35em;white-space:nowrap}`,
     inner ? `<div class="sc"><div class="an">${inner}</div></div>` : "",
   );
 }
@@ -162,7 +170,7 @@ function lower(g: GraphicsConfig) {
   const sc = at
     ? placeCss(at, scale(L.size))
     : `position:absolute;left:6vw;bottom:13vh;transform:scale(${scale(L.size)});transform-origin:bottom left`;
-  const head = `.sc{${sc}}${enter(L.anim, sideOf("bl", at))}.lt{display:flex;font-family:${ff};color:${txt}}`;
+  const head = `.sc{${sc}}${enter(L.anim, sideOf("bl", at), msOf(L))}.lt{display:flex;font-family:${ff};color:${txt}}`;
   const name = esc(L.name);
   const title = esc(L.title);
 
@@ -273,7 +281,7 @@ function clock(g: GraphicsConfig) {
 .tm{background:${rgba(C.bg, C.bgOpacity)};padding:.5vw 1.3vw}`
     : `.c{background:${rgba(C.bg, C.bgOpacity)};color:${txt};font-family:${font(C.font)};font-size:2.8vw;font-weight:700;padding:.6vw 1.6vw;border-radius:.6vw}`;
   return page(
-    `.sc{${where}}${enter(C.anim, sideOf(pos, at))}${look}`,
+    `.sc{${where}}${enter(C.anim, sideOf(pos, at), msOf(C))}${look}`,
     `<div class="sc"><div class="an"><div class="c">${split && label ? `<div class="lab">${esc(label)}</div>` : ""}<div class="tm" id="c">--:--</div></div></div></div>`,
     `var H24=${h24 ? "true" : "false"},SEC=${seconds ? "true" : "false"};function p(n){return String(n).padStart(2,'0')}
 function t(){var d=new Date(),h=d.getHours(),s='';if(!H24){s=h>=12?' PM':' AM';h=h%12||12}
@@ -291,7 +299,7 @@ function badge(g: GraphicsConfig) {
     : `position:absolute;${POS[pos]};transform:scale(${scale(B.size)});transform-origin:${ORIGIN[pos]}`;
   const col = color(c, "#e5322d");
   const txt = color(B.textColor, "#ffffff");
-  const head = `.sc{${where}}${enter(B.anim, sideOf(pos, at))}@keyframes p{50%{opacity:.25}}`;
+  const head = `.sc{${where}}${enter(B.anim, sideOf(pos, at), msOf(B))}@keyframes p{50%{opacity:.25}}`;
 
   if (style === "location") {
     const locBg = color(B.locBg, "#0a1628");
@@ -323,7 +331,7 @@ function breaking(g: GraphicsConfig) {
   const k = scale(B.size);
   const acc = color(B.accent, "#d0161d");
   return page(
-    `.sc{position:absolute;left:0;right:0;bottom:8.5vh}${enter(B.anim, "l")}
+    `.sc{position:absolute;left:0;right:0;bottom:8.5vh}${enter(B.anim, "l", msOf(B))}
 .bn{display:flex;height:${(11 * k).toFixed(2)}vh;font-family:${font(B.font)}}
 .lb{background:${acc};color:${contrast(acc)};font-size:${(2.8 * k).toFixed(2)}vw;font-weight:800;padding:0 2.5vw;display:flex;align-items:center;letter-spacing:.1vw;white-space:nowrap}
 .lb span{animation:pl 1.2s ease-in-out infinite}
@@ -343,12 +351,119 @@ function score(g: GraphicsConfig) {
   const txt = color(S.textColor, "#ffffff");
   const dark = color(S.bg, "#0b130f");
   return page(
-    `.sc{${where}}${enter(S.anim, sideOf(S.pos, at))}
+    `.sc{${where}}${enter(S.anim, sideOf(S.pos, at), msOf(S))}
 .s{display:flex;font-family:${font(S.font)};font-size:2.1vw;font-weight:800;color:${txt}}
 .tm{background:${color(S.primary, "#0f8a4a")};color:${readable(txt, color(S.primary, "#0f8a4a"))};padding:.42vw 1.25vw;letter-spacing:.05em}
 .sb{background:${txt};color:${readable(dark, txt)};padding:.42vw 1.15vw;font-variant-numeric:tabular-nums}
 .ck{background:${color(S.accent, "#d7ff3a")};color:${dark};padding:.42vw 1.15vw;font-variant-numeric:tabular-nums}`,
     `<div class="sc"><div class="an"><div class="s"><div class="tm">${esc(S.home)}</div><div class="sb">${esc(S.homeScore)}–${esc(S.awayScore)}</div><div class="tm">${esc(S.away)}</div>${S.clock ? `<div class="ck">${esc(S.clock)}</div>` : ""}</div></div></div>`,
+  );
+}
+
+function social(g: GraphicsConfig) {
+  const S = g.social;
+  const a = color(S.accent, "#f5b700");
+  const dark = color(S.bg, "#0a1628");
+  const txt = color(S.textColor, "#ffffff");
+  return page(
+    `.sc{position:absolute;right:6.25vw;bottom:13vh;transform:scale(${scale(S.size)});transform-origin:bottom right}${enter(S.anim, "r", msOf(S))}
+.s{display:flex;font-family:${font(S.font)};font-size:2.3vw;font-weight:700;border-radius:99vw;overflow:hidden;white-space:nowrap}
+.pl{background:${a};color:${contrast(a)};padding:.73vw 1.56vw}
+.hd{background:${dark};color:${readable(txt, dark)};padding:.73vw 1.9vw}`,
+    `<div class="sc"><div class="an"><div class="s"><div class="pl">${esc(S.platform)}</div><div class="hd">${esc(S.handle)}</div></div></div></div>`,
+  );
+}
+
+const lines = (v = "") =>
+  v
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+/** 1920x1080 design pixels -> vw / vh, so the full-screen cards scale to any output size. */
+const vw = (px: number) => `${(px / 19.2).toFixed(3)}vw`;
+const vh = (px: number) => `${(px / 10.8).toFixed(3)}vh`;
+
+function full(g: GraphicsConfig) {
+  const F = g.full;
+  const prim = color(F.primary, "#0b4fa8");
+  const sec = color(F.secondary, "#0a1628");
+  const acc = color(F.accent, "#f5b700");
+  const txt = color(F.textColor, "#ffffff");
+  const ff = font(F.font);
+  const base = `.sc{position:absolute;inset:0}${enter(F.anim, "l", msOf(F))}.an{position:absolute;inset:0}.fx{position:absolute;inset:0;font-family:${ff};color:${txt};overflow:hidden}`;
+
+  if (F.kind === "quote") {
+    return page(
+      `${base}.fx{background:${sec};display:flex;flex-direction:column;justify-content:center;padding:0 ${vw(220)}}
+.q{font-size:${vw(260)};color:${acc};line-height:.6;height:${vh(140)}}
+.t{font-size:${vw(88)};font-weight:600;line-height:1.15}
+.a{font-size:${vw(44)};margin-top:${vh(50)};color:${acc}}`,
+      `<div class="sc"><div class="an"><div class="fx"><div class="q">“</div><div class="t">${esc(F.quote)}</div><div class="a">— ${esc(F.author)}</div></div></div></div>`,
+    );
+  }
+  if (F.kind === "standings") {
+    const rows = lines(F.rows)
+      .slice(0, 12)
+      .map((r, i) => {
+        const [team = "", p = "", pts = ""] = r.split(",").map((x) => x.trim());
+        return `<div class="r${i % 2 ? "" : " z"}"><div class="n">${i + 1}</div><div class="tm">${esc(team)}</div><div class="p">${esc(p)}</div><div class="pt">${esc(pts)}</div></div>`;
+      })
+      .join("");
+    return page(
+      `${base}.fx{background:${rgba(sec, 93)};padding:${vh(120)} ${vw(360)}}
+.h{font-size:${vw(64)};font-weight:800;border-bottom:${vw(8)} solid ${acc};padding-bottom:${vh(16)}}
+.r{display:flex;font-size:${vw(48)};padding:${vh(18)} 0;border-bottom:1px solid ${rgba(txt, 20)}}
+.z{background:${rgba(prim, 33)}}
+.n{width:${vw(90)};padding-left:${vw(20)};color:${acc};font-weight:800}.tm{flex:1}.p{width:${vw(140)};text-align:right}.pt{width:${vw(160)};text-align:right;padding-right:${vw(20)};font-weight:800}`,
+      `<div class="sc"><div class="an"><div class="fx"><div class="h">${esc(F.title)}</div>${rows}</div></div></div>`,
+    );
+  }
+  if (F.kind === "countdown") {
+    const total = Math.max(0, Math.round(F.seconds));
+    return page(
+      `${base}.fx{display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(160deg,${sec},${prim})}
+.ti{font-size:${vw(48)};letter-spacing:${vw(12)};text-transform:uppercase;color:${acc}}
+.cd{font-size:${vw(300)};font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.su{font-size:${vw(40)};opacity:.8}`,
+      `<div class="sc"><div class="an"><div class="fx"><div class="ti">${esc(F.title)}</div><div class="cd" id="c">00:00</div><div class="su">${esc(F.subtitle)}</div></div></div></div>`,
+      `var T=${total}*1000,S=Date.now();function p(n){return String(n).padStart(2,'0')}
+function t(){var l=Math.max(0,T-(Date.now()-S));document.getElementById('c').textContent=p(Math.floor(l/60000))+':'+p(Math.floor((l%60000)/1000))}
+t();setInterval(t,250);`,
+    );
+  }
+  if (F.kind === "announcement") {
+    return page(
+      `${base}.fx{display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 30% 40%,${prim},${sec})}
+.ti{font-size:${vw(200)};font-weight:800;letter-spacing:${vw(10)};text-align:center}
+.su{font-size:${vw(60)};color:${acc}}`,
+      `<div class="sc"><div class="an"><div class="fx"><div class="ti">${esc(F.title)}</div><div class="su">${esc(F.subtitle)}</div></div></div></div>`,
+    );
+  }
+  if (F.kind === "credits") {
+    const secs = Math.max(5, Math.round(F.speed));
+    const body = lines(F.lines)
+      .map((l) => {
+        const [r = "", n = ""] = l.split("—").map((x) => x.trim());
+        return `<div class="l"><div class="ro">${esc(r)}</div><div class="na">${esc(n)}</div></div>`;
+      })
+      .join("");
+    return page(
+      `${base}.fx{background:${sec}}
+.ro{font-size:${vw(34)};opacity:.7}.na{font-size:${vw(56)};font-weight:700}.l{margin-bottom:${vh(50)}}
+.rl{text-align:center;animation:roll ${secs}s linear infinite}
+.tt{font-size:${vw(90)};font-weight:800;color:${acc};margin-bottom:${vh(80)}}
+@keyframes roll{from{transform:translateY(100vh)}to{transform:translateY(-100%)}}`,
+      `<div class="sc"><div class="an"><div class="fx"><div class="rl"><div class="tt">${esc(F.title)}</div>${body}</div></div></div></div>`,
+    );
+  }
+  // headline
+  return page(
+    `${base}.fx{background:linear-gradient(120deg,${sec} 55%,${prim});padding:${vh(180)} ${vw(160)}}
+.k{font-size:${vw(40)};color:${acc};letter-spacing:${vw(8)};font-weight:700}
+.hl{font-size:${vw(120)};font-weight:800;line-height:1.02;max-width:${vw(1400)};margin-top:${vh(24)}}
+.bar{width:${vw(200)};height:${vw(10)};background:${acc};margin:${vh(48)} 0}
+.bd{font-size:${vw(44)};max-width:${vw(1300)};opacity:.9}`,
+    `<div class="sc"><div class="an"><div class="fx"><div class="k">${esc(F.kicker)}</div><div class="hl">${esc(F.headline)}</div><div class="bar"></div><div class="bd">${esc(F.body)}</div></div></div></div>`,
   );
 }
 
@@ -368,6 +483,10 @@ export function layerUrl(id: GfxId, g: GraphicsConfig): string {
       return breaking(g);
     case "score":
       return score(g);
+    case "social":
+      return social(g);
+    case "full":
+      return full(g);
   }
 }
 

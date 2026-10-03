@@ -6,7 +6,10 @@ import { cleanScrolls } from "./config";
 import { safeImage } from "./graphics";
 import {
   BADGE_STYLES,
+  CLOCK_STYLES,
   DEFAULT_GRAPHICS,
+  FULL_KINDS,
+  GFX_ANIMS,
   GFX_FONTS,
   GFX_IDS,
   LOWER_STYLES,
@@ -71,6 +74,9 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
         at: cleanAt(r["at"]),
         size: num(r["size"], d.size, 3, 60),
         opacity: num(r["opacity"], d.opacity, 5, 100),
+        text: str(r["text"], d.text, 24),
+        textColor: hex(r["textColor"], d.textColor),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
       } as LayerData<K>;
     }
     case "lower": {
@@ -88,10 +94,13 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
         at: cleanAt(r["at"]),
         name: str(r["name"], d.name, 80),
         title: str(r["title"], d.title, 80),
+        number: str(r["number"], d.number, 4),
         accent: hex(r["accent"], d.accent),
+        primary: hex(r["primary"], d.primary),
         presets,
         size: num(r["size"], d.size, 30, 300),
         style: oneOf(r["style"], LOWER_STYLES, d.style),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
         bg: hex(r["bg"], d.bg),
         bgOpacity: num(r["bgOpacity"], d.bgOpacity, 0, 100),
         text: hex(r["text"], d.text),
@@ -121,6 +130,10 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
     case "clock": {
       const d = D.clock;
       return {
+        label: str(r["label"], d.label, 12),
+        accent: hex(r["accent"], d.accent),
+        style: oneOf(r["style"], CLOCK_STYLES, d.style),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
         pos: isCorner(r["pos"]) ? r["pos"] : d.pos,
         at: cleanAt(r["at"]),
         seconds: bool(r["seconds"], d.seconds),
@@ -136,13 +149,85 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
       const d = D.badge;
       return {
         text: str(r["text"], d.text, 24),
+        location: str(r["location"], d.location, 32),
+        locBg: hex(r["locBg"], d.locBg),
         pos: isCorner(r["pos"]) ? r["pos"] : d.pos,
         at: cleanAt(r["at"]),
         color: hex(r["color"], d.color),
         size: num(r["size"], d.size, 30, 300),
         style: oneOf(r["style"], BADGE_STYLES, d.style),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
         textColor: hex(r["textColor"], d.textColor),
         font: oneOf(r["font"], GFX_FONTS, d.font),
+      } as LayerData<K>;
+    }
+    case "breaking": {
+      const d = D.breaking;
+      return {
+        label: str(r["label"], d.label, 24),
+        headline: str(r["headline"], d.headline, 200),
+        accent: hex(r["accent"], d.accent),
+        bg: hex(r["bg"], d.bg),
+        textColor: hex(r["textColor"], d.textColor),
+        size: num(r["size"], d.size, 30, 300),
+        font: oneOf(r["font"], GFX_FONTS, d.font),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
+      } as LayerData<K>;
+    }
+    case "score": {
+      const d = D.score;
+      return {
+        home: str(r["home"], d.home, 8),
+        away: str(r["away"], d.away, 8),
+        homeScore: str(r["homeScore"], d.homeScore, 3),
+        awayScore: str(r["awayScore"], d.awayScore, 3),
+        clock: str(r["clock"], d.clock, 10),
+        pos: isCorner(r["pos"]) ? r["pos"] : d.pos,
+        // Missing = the top-centre default; an explicit null = "use the corner".
+        at: r["at"] === undefined ? d.at : cleanAt(r["at"]),
+        size: num(r["size"], d.size, 30, 300),
+        primary: hex(r["primary"], d.primary),
+        accent: hex(r["accent"], d.accent),
+        bg: hex(r["bg"], d.bg),
+        textColor: hex(r["textColor"], d.textColor),
+        font: oneOf(r["font"], GFX_FONTS, d.font),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
+      } as LayerData<K>;
+    }
+    case "social": {
+      const d = D.social;
+      return {
+        platform: str(r["platform"], d.platform, 32),
+        handle: str(r["handle"], d.handle, 40),
+        accent: hex(r["accent"], d.accent),
+        bg: hex(r["bg"], d.bg),
+        textColor: hex(r["textColor"], d.textColor),
+        size: num(r["size"], d.size, 30, 300),
+        font: oneOf(r["font"], GFX_FONTS, d.font),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
+      } as LayerData<K>;
+    }
+    case "full": {
+      const d = D.full;
+      return {
+        kind: oneOf(r["kind"], FULL_KINDS, d.kind),
+        kicker: str(r["kicker"], d.kicker, 60),
+        headline: str(r["headline"], d.headline, 200),
+        body: str(r["body"], d.body, 400),
+        quote: str(r["quote"], d.quote, 300),
+        author: str(r["author"], d.author, 80),
+        title: str(r["title"], d.title, 80),
+        subtitle: str(r["subtitle"], d.subtitle, 120),
+        rows: str(r["rows"], d.rows, 800),
+        seconds: num(r["seconds"], d.seconds, 0, 86400),
+        lines: str(r["lines"], d.lines, 1200),
+        speed: num(r["speed"], d.speed, 5, 300),
+        primary: hex(r["primary"], d.primary),
+        secondary: hex(r["secondary"], d.secondary),
+        accent: hex(r["accent"], d.accent),
+        textColor: hex(r["textColor"], d.textColor),
+        font: oneOf(r["font"], GFX_FONTS, d.font),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
       } as LayerData<K>;
     }
   }

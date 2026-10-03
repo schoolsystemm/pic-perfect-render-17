@@ -34,5 +34,7 @@ export function applyTheme(g: GraphicsConfig, t: GfxTheme): GraphicsConfig {
     badge: { ...g.badge, style: "location", color: LIVE_RED, locBg: t.secondary, textColor: "#ffffff", font: t.font },
     breaking: { ...g.breaking, accent: LIVE_RED, font: t.font },
     score: { ...g.score, primary: t.primary, accent: t.accent, bg: t.secondary, textColor: t.text, font: t.font },
+    social: { ...g.social, accent: t.accent, bg: t.secondary, textColor: t.text, font: t.font },
+    full: { ...g.full, primary: t.primary, secondary: t.secondary, accent: t.accent, textColor: t.text, font: t.font },
   };
 }

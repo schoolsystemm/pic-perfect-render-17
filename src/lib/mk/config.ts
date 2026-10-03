@@ -53,6 +53,8 @@ interface LooseGraphics {
   badge?: Partial<GraphicsConfig["badge"]>;
   breaking?: Partial<GraphicsConfig["breaking"]>;
   score?: Partial<GraphicsConfig["score"]>;
+  social?: Partial<GraphicsConfig["social"]>;
+  full?: Partial<GraphicsConfig["full"]>;
 }
 
 /** Keep only well-formed scroll presets (storage and share links are untrusted). */
@@ -118,6 +120,8 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
     badge: { ...D.badge, ...(r.badge ?? {}) },
     breaking: { ...D.breaking, ...(r.breaking ?? {}) },
     score: { ...D.score, ...(r.score ?? {}) },
+    social: { ...D.social, ...(r.social ?? {}) },
+    full: { ...D.full, ...(r.full ?? {}) },
   };
 }
 
