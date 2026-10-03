@@ -370,7 +370,10 @@ function news(g: GraphicsConfig) {
   const N = g.news;
   const tags = (Array.isArray(N.tags) ? N.tags : [])
     .slice(0, 20)
-    .map((t) => ({ main: String(t?.main ?? "").slice(0, 160), below: String(t?.below ?? "").slice(0, 200) }))
+    .map((t) => {
+      const below = String(t?.below ?? "").slice(0, 200);
+      return { main: String(t?.main ?? "").slice(0, 160), below, f: t?.full === true || !below.trim() };
+    })
     .filter((t) => t.main.trim() || t.below.trim());
   const kicker = (N.kicker ?? "").trim();
   if (!tags.length && !kicker) return page("", "");
@@ -380,7 +383,7 @@ function news(g: GraphicsConfig) {
   const txt = color(N.textColor, "#ffffff");
   const ms = Math.round(num(N.seconds, 6, 2, 120) * 1000);
   const start = Math.max(0, Math.min(Math.max(0, tags.length - 1), Math.round(num(N.start, 0, 0, 19))));
-  const hasBelow = tags.some((t) => t.below.trim());
+  const hasBelow = tags.some((t) => !t.f);
   const json = JSON.stringify(tags).replace(/</g, "\\u003c");
   const ff = fontB(N.font);
   const mainTxt = readable(N.textColor, prim);
@@ -397,14 +400,17 @@ function news(g: GraphicsConfig) {
 .mt div,.bl div{box-sizing:border-box;width:100%;padding:0 2.2vw;white-space:nowrap;overflow:hidden}
 .mt div{font-size:2.63vw;font-weight:700;line-height:1.1;text-transform:uppercase}
 .bl div{font-size:2.2vw;font-weight:600;line-height:1.15;font-variant:small-caps;letter-spacing:.02em}
+.st.f .r2{display:none}
+.st.f .mt{height:7.15vw}
+.st.f .mt div{font-size:3.3vw;line-height:1.1;white-space:normal;overflow:visible}
 .o{animation:so .28s ease-in both}.i{animation:si .5s cubic-bezier(.2,.8,.2,1) both}
 @keyframes so{to{opacity:0;transform:translateY(-35%)}}@keyframes si{from{opacity:0;transform:translateY(45%)}to{opacity:1;transform:none}}`,
-    `<div class="sc"><div class="an"><div class="st">${kicker ? `<div class="kk">${esc(kicker)}</div>` : ""}${tags.length ? `<div class="rw r1"><div class="ab"></div><div class="mt"><div id="m"></div></div></div>${hasBelow ? `<div class="rw r2"><div class="ab"></div><div class="bl"><div id="b"></div></div></div>` : ""}` : ""}</div></div></div><!--${Math.round(num(N.run, 0, 0, 1e9))}-->`,
+    `<div class="sc"><div class="an"><div class="st" id="s">${kicker ? `<div class="kk">${esc(kicker)}</div>` : ""}${tags.length ? `<div class="rw r1"><div class="ab"></div><div class="mt"><div id="m"></div></div></div>${hasBelow ? `<div class="rw r2"><div class="ab"></div><div class="bl"><div id="b"></div></div></div>` : ""}` : ""}</div></div></div><!--${Math.round(num(N.run, 0, 0, 1e9))}-->`,
     tags.length
       ? `var T=${json},MS=${ms},LOOP=${N.loop === false ? "false" : "true"},i=${start};
-var m=document.getElementById('m'),b=document.getElementById('b'),bl=b&&b.closest('.r2');
-function fit(e){e.style.fontSize='';var s=parseFloat(getComputedStyle(e).fontSize);while(e.scrollWidth>e.clientWidth&&s>8){s-=.5;e.style.fontSize=s+'px'}}
-function put(n){var t=T[n];m.textContent=t.main;fit(m);if(b){b.textContent=t.below;bl.style.visibility=t.below.trim()?'visible':'hidden';fit(b)}}
+var st=document.getElementById('s'),m=document.getElementById('m'),b=document.getElementById('b');
+function fit(e,full){e.style.fontSize='';var s=parseFloat(getComputedStyle(e).fontSize);var p=e.parentNode;while((full?e.offsetHeight>p.clientHeight:e.scrollWidth>e.clientWidth)&&s>8){s-=.5;e.style.fontSize=s+'px'}}
+function put(n){var t=T[n];st.className=t.f?'st f':'st';m.textContent=t.main;fit(m,t.f);if(b&&!t.f){b.textContent=t.below;fit(b,false)}}
 function fx(c){m.className=c;if(b)b.className=c;if(b&&c==='i')b.style.animationDelay='.09s';else if(b)b.style.animationDelay='0s'}
 function go(n){fx('o');setTimeout(function(){i=n;put(i);fx('i');wait()},280)}
 function wait(){if(T.length<2)return;if(i>=T.length-1&&!LOOP)return;setTimeout(function(){go(i>=T.length-1?0:i+1)},MS)}
