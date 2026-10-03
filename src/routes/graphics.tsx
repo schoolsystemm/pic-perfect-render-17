@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Copy, Download, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { DesignLibrary } from "@/components/mk/design-library";
 import { GfxRundown } from "@/components/mk/gfx-rundown";
 import { LiveSetup } from "@/components/mk/live-setup";
 import { PlacePicker } from "@/components/mk/place-picker";
@@ -197,15 +198,6 @@ function Preview({ id, g, backdrop }: { id: GfxId; g: GraphicsConfig; backdrop: 
   );
 }
 
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${name.replace(/[^\w-]+/g, "_") || "graphic"}.mkgfx.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 function GraphicsPage() {
   const state = useSwitcher();
   const { share } = Route.useSearch();
@@ -215,8 +207,7 @@ function GraphicsPage() {
   const [mode, setMode] = useState<"design" | "rundown" | "live">("design");
   const [active, setActive] = useState<GfxId>("lower");
   const [backdrop, setBackdrop] = useState<Backdrop>("video");
-  const [saveName, setSaveName] = useState("");
-  const [paste, setPaste] = useState("");
+  const [loadedId, setLoadedId] = useState<string | null>(null);
   const [incoming, setIncoming] = useState<ReturnType<typeof parsePack> | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -266,40 +257,30 @@ function GraphicsPage() {
   const load = (item: SavedGraphic) => {
     setDraft((d) => ({ ...d, [item.layer]: sanitizeLayer(item.layer, item.data) }));
     setActive(item.layer);
-    say(`Loaded "${item.name}" — Save to put it in OBS`);
+    setLoadedId(item.id);
+    say(`Loaded "${item.name}" — change it, then Update it in the library and Save to put it in OBS`);
   };
 
-  const copyLink = async (item: SavedGraphic) => {
-    const link = shareLink(item);
-    if (!link) {
-      say(`Too big for a link (over ${MAX_LINK_CHARS} characters) — use the file instead`);
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(link);
-      say("Share link copied");
-    } catch {
-      window.prompt("Copy this share link", link);
-    }
-  };
+  const [skip, setSkip] = useState<Set<number>>(new Set());
+  useEffect(() => setSkip(new Set()), [incoming]);
 
   const importPack = (items: ReturnType<typeof parsePack>) => {
-    const n = gfxLibrary.addMany(items);
+    const wanted = items.filter((_, n) => !skip.has(n));
+    const n = gfxLibrary.addMany(wanted);
     say(`Added ${n} graphic${n === 1 ? "" : "s"} to your library`);
     setIncoming(null);
-    setPaste("");
   };
 
   const c = draft;
 
   return (
     <div className="mk-chassis flex h-[100dvh] flex-col overflow-hidden">
-      <header className="mk-chassis flex h-10 shrink-0 items-center gap-2 border-b border-white/10 px-2">
-        <Link to="/" className="mk-button flex h-7 items-center gap-1.5 rounded-[3px] px-2 text-[10px]" aria-label="Back to switcher">
+      <header className="mk-chassis flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-white/10 px-2 [scrollbar-width:none]">
+        <Link to="/" className="mk-button flex h-7 shrink-0 items-center gap-1.5 rounded-[3px] px-2 text-[10px]" aria-label="Back to switcher">
           <ArrowLeft className="h-3.5 w-3.5" /> Switcher
         </Link>
-        <h1 className="text-base leading-none tracking-[0.2em] text-foreground">GRAPHICS STUDIO</h1>
-        <div className="ml-2 flex gap-1" role="tablist" aria-label="Graphics Studio view">
+        <h1 className="hidden shrink-0 text-base leading-none tracking-[0.2em] text-foreground md:block">GRAPHICS STUDIO</h1>
+        <div className="flex shrink-0 gap-1 md:ml-2" role="tablist" aria-label="Graphics Studio view">
           {(
             [
               ["design", "Design"],
@@ -313,13 +294,13 @@ function GraphicsPage() {
               role="tab"
               aria-selected={mode === id}
               onClick={() => setMode(id)}
-              className={cn("mk-button h-7 rounded-[3px] px-3 text-[10px]", mode === id && "mk-lit-preview")}
+              className={cn("mk-button h-7 shrink-0 whitespace-nowrap rounded-[3px] px-3 text-[10px]", mode === id && "mk-lit-preview")}
             >
               {text}
             </button>
           ))}
         </div>
-        <span className="mk-label ml-auto text-[8px]">By Konchella</span>
+        <span className="mk-label ml-auto hidden shrink-0 text-[8px] sm:block">By Konchella</span>
       </header>
 
       {mode === "rundown" && (
@@ -341,7 +322,7 @@ function GraphicsPage() {
         )}
       >
         {/* ------------------------------------------------ left: build + preview */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex min-w-0 shrink-0 flex-col gap-1.5 fit:min-h-0 fit:flex-1 fit:shrink">
           <div className="mk-panel flex shrink-0 flex-wrap items-center gap-1 rounded-md p-1.5">
             <span className="mk-label mr-1 text-[9px]" title="Re-colours and re-styles every graphic at once. Save to put it in OBS.">
               Theme
@@ -380,8 +361,8 @@ function GraphicsPage() {
             ))}
           </div>
 
-          <section className="mk-panel flex min-h-0 flex-1 flex-col gap-1.5 rounded-md p-1.5">
-            <div className="flex shrink-0 items-center gap-1">
+          <section className="mk-panel flex shrink-0 flex-col gap-1.5 rounded-md p-1.5 fit:min-h-[9rem] fit:flex-1 fit:shrink">
+            <div className="flex shrink-0 flex-wrap items-center gap-1">
               <h2 className="mk-label mr-auto text-foreground">{label} preview</h2>
               {(["video", "checker", "black"] as Backdrop[]).map((b) => (
                 <button key={b} type="button" onClick={() => setBackdrop(b)} className={cn("mk-button h-6 rounded-[3px] px-2 text-[9px]", backdrop === b && "mk-lit-amber")}>
@@ -396,14 +377,14 @@ function GraphicsPage() {
                 {state.gfxActive[active] ? "On air — take off" : "Take to air"}
               </button>
             </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center" style={{ containerType: "size" }}>
+            <div className="flex aspect-video w-full items-center justify-center fit:aspect-auto fit:min-h-0 fit:flex-1" style={{ containerType: "size" }}>
               <div style={{ width: "min(100cqw, calc(100cqh * 16 / 9))" }}>
                 <Preview id={active} g={draft} backdrop={backdrop} />
               </div>
             </div>
           </section>
 
-          <section className="mk-panel grid shrink-0 gap-1.5 rounded-md p-1.5 md:grid-cols-[1fr_auto]">
+          <section className="mk-panel grid shrink-0 gap-1.5 rounded-md p-1.5 lg:grid-cols-[1fr_auto]">
             <Row label="Add MK Graphics to this OBS scene only">
               <select className={field} value={scene} onChange={(e) => setScene(e.target.value)}>
                 <option value="">— not nested in any scene —</option>
@@ -414,7 +395,7 @@ function GraphicsPage() {
                 ))}
               </select>
             </Row>
-            <div className="flex items-end gap-1.5">
+            <div className="flex flex-wrap items-end gap-1.5">
               <span className="pb-2 font-mono text-[10px] text-muted-foreground">{dirty ? "Unsaved changes" : "All saved"}</span>
               <button
                 type="button"
@@ -437,8 +418,8 @@ function GraphicsPage() {
         </div>
 
         {/* ------------------------------------------------ right: controls + library */}
-        <div className="flex min-h-0 w-full shrink-0 flex-col gap-1.5 fit:w-[23rem]">
-          <section className="mk-panel min-h-0 flex-1 overflow-y-auto rounded-md p-2">
+        <div className="flex min-h-0 w-full shrink-0 flex-col gap-1.5 fit:w-[20rem] lg:fit:w-[23rem]">
+          <section className="mk-panel shrink-0 rounded-md p-2 fit:min-h-0 fit:flex-1 fit:shrink fit:overflow-y-auto">
             <h2 className="mk-label mb-2 text-foreground">Design — {label}</h2>
             <div className="grid grid-cols-2 gap-2">
               {active === "logo" && (
@@ -1045,117 +1026,44 @@ function GraphicsPage() {
           </section>
 
           {/* ---------------------------------------------------------- library */}
-          <section className="mk-panel flex max-h-[46%] min-h-0 shrink-0 flex-col gap-1.5 rounded-md p-2">
-            <h2 className="mk-label text-foreground">My {label.toLowerCase()} designs</h2>
-            <div className="flex gap-1">
-              <input
-                className={cn(field, "flex-1")}
-                value={saveName}
-                placeholder={`Name this ${label.toLowerCase()} design`}
-                onChange={(e) => setSaveName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && saveName.trim()) {
-                    gfxLibrary.save(saveName, active, draft[active]);
-                    say(`Saved "${saveName.trim()}"`);
-                    setSaveName("");
-                  }
-                }}
-              />
-              <button
-                type="button"
-                disabled={!saveName.trim()}
-                className="mk-button h-8 rounded-[3px] px-3 text-[10px] disabled:opacity-40"
-                onClick={() => {
-                  gfxLibrary.save(saveName, active, draft[active]);
-                  say(`Saved "${saveName.trim()}"`);
-                  setSaveName("");
-                }}
-              >
-                Save design
-              </button>
-            </div>
-
-            <ul className="grid min-h-0 gap-1 overflow-y-auto">
-              {mine.length === 0 && <li className="font-mono text-[10px] text-muted-foreground">Nothing saved for {label.toLowerCase()} yet.</li>}
-              {mine.map((item) => (
-                <li key={item.id} className="flex items-center gap-1 rounded-[3px] bg-black/25 p-0.5">
-                  <button type="button" className="mk-button h-7 min-w-0 flex-1 truncate rounded-[3px] px-2 text-left text-[11px] normal-case" onClick={() => load(item)} title="Load into the editor">
-                    {item.name}
-                  </button>
-                  <button type="button" aria-label={`Copy share link for ${item.name}`} title="Copy share link" className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]" onClick={() => void copyLink(item)}>
-                    <Copy className="h-3 w-3" />
-                  </button>
-                  <button type="button" aria-label={`Download ${item.name}`} title="Download file to send" className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]" onClick={() => download(item.name, exportJson([item]))}>
-                    <Download className="h-3 w-3" />
-                  </button>
-                  <button type="button" aria-label={`Delete ${item.name}`} title="Delete" className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]" onClick={() => gfxLibrary.remove(item.id)}>
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-
-            <div className="grid gap-1 border-t border-white/10 pt-1.5">
-              <div className="flex items-center gap-1">
-                <span className="mk-label mr-auto text-[9px]">Share · Import</span>
-                <button
-                  type="button"
-                  disabled={library.length === 0}
-                  className="mk-button h-6 rounded-[3px] px-2 text-[9px]"
-                  onClick={() => download("mk-vision-graphics", exportJson(library))}
-                >
-                  Export all
-                </button>
-                <label className="mk-button flex h-6 cursor-pointer items-center rounded-[3px] px-2 text-[9px]">
-                  Import file
-                  <input
-                    type="file"
-                    accept=".json,application/json"
-                    className="sr-only"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      if (!file) return;
-                      try {
-                        setIncoming(parsePack(await file.text()));
-                      } catch (err) {
-                        say(err instanceof Error ? err.message : "Could not read that file");
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-              <div className="flex gap-1">
-                <input className={cn(field, "flex-1")} value={paste} placeholder="Paste a share link or code" onChange={(e) => setPaste(e.target.value)} />
-                <button
-                  type="button"
-                  disabled={!paste.trim()}
-                  className="mk-button h-8 rounded-[3px] px-3 text-[10px] disabled:opacity-40"
-                  onClick={() => {
-                    try {
-                      setIncoming(parseShare(paste));
-                    } catch (err) {
-                      say(err instanceof Error ? err.message : "Could not read that code");
-                    }
-                  }}
-                >
-                  Open
-                </button>
-              </div>
-            </div>
-          </section>
+          <DesignLibrary
+            active={active}
+            draft={draft}
+            library={library}
+            loadedId={loadedId}
+            onLoad={load}
+            onLoaded={setLoadedId}
+            onIncoming={setIncoming}
+            say={say}
+          />
         </div>
       </main>
 
       {incoming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="mk-panel w-full max-w-sm rounded-md p-3">
-            <h2 className="mk-label mb-2 text-foreground">Add to your library?</h2>
-            <ul className="mb-3 grid gap-1">
+            <h2 className="mk-label mb-1 text-foreground">Add to your library?</h2>
+            <p className="mb-2 font-mono text-[10px] text-muted-foreground">Untick anything you do not want. A design with the same name and type is replaced.</p>
+            <ul className="mb-3 grid max-h-[50dvh] gap-1 overflow-y-auto">
               {incoming.map((i, n) => (
-                <li key={n} className="flex items-center justify-between rounded-[3px] bg-black/25 px-2 py-1 text-xs">
-                  <span className="truncate">{i.name}</span>
-                  <span className="mk-label text-[9px]">{GFX_LAYERS.find((l) => l.id === i.layer)!.label}</span>
+                <li key={n}>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-[3px] bg-black/25 px-2 py-1.5 text-xs">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0"
+                      checked={!skip.has(n)}
+                      onChange={() =>
+                        setSkip((p) => {
+                          const m = new Set(p);
+                          if (m.has(n)) m.delete(n);
+                          else m.add(n);
+                          return m;
+                        })
+                      }
+                    />
+                    <span className="min-w-0 flex-1 truncate">{i.name}</span>
+                    <span className="mk-label shrink-0 text-[9px]">{GFX_LAYERS.find((l) => l.id === i.layer)!.label}</span>
+                  </label>
                 </li>
               ))}
             </ul>
@@ -1163,8 +1071,13 @@ function GraphicsPage() {
               <button type="button" className="mk-button h-8 rounded-[3px] px-3 text-xs" onClick={() => setIncoming(null)}>
                 Cancel
               </button>
-              <button type="button" className="mk-button mk-lit-amber h-8 rounded-[3px] px-4 text-xs" onClick={() => importPack(incoming)}>
-                Add
+              <button
+                type="button"
+                disabled={skip.size >= incoming.length}
+                className="mk-button mk-lit-amber h-8 rounded-[3px] px-4 text-xs disabled:opacity-40"
+                onClick={() => importPack(incoming)}
+              >
+                Add {incoming.length - skip.size}
               </button>
             </div>
           </div>
