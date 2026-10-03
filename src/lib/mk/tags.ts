@@ -55,7 +55,18 @@ export const TAG_STYLES: { id: TagStyle; label: string }[] = [
 ];
 export type TagAnchor = "tl" | "tc" | "tr";
 
+/** A saved location you can pick for any cam's tag. The emoji (a flag, a pin...) is shown before the name. */
+export interface TagPlace {
+  name: string;
+  emoji: string;
+}
+export const TAG_PLACE_MAX = 40;
+/** The text a tag shows for a saved location. */
+export const placeText = (p: TagPlace) => `${p.emoji.trim()} ${p.name.trim()}`.trim();
+
 export interface TagConfig {
+  /** Your saved locations (Graphics Studio → Live FX & Tags). Each cam's tag is picked from this list, or typed. */
+  places: TagPlace[];
   /** Location text per cam scene name. Empty = no tag for that cam. */
   labels: Record<string, string>;
   /** A hand-placed spot inside the pane, per cam scene (0..1 across the free space). Wins over the default spot. */
@@ -77,6 +88,7 @@ export interface TagConfig {
 }
 
 export const DEFAULT_TAGS: TagConfig = {
+  places: [],
   labels: {},
   spots: {},
   at: null,
@@ -108,7 +120,17 @@ export function cleanTags(raw: unknown): TagConfig {
       if (p && k) spots[k.slice(0, 80)] = p;
     }
   }
+  const places: TagPlace[] = [];
+  if (Array.isArray(r.places)) {
+    for (const p of r.places.slice(0, TAG_PLACE_MAX)) {
+      const q = (p ?? {}) as Partial<TagPlace>;
+      const name = typeof q.name === "string" ? q.name.trim().slice(0, 50) : "";
+      const emoji = typeof q.emoji === "string" ? q.emoji.trim().slice(0, 8) : "";
+      if (name) places.push({ name, emoji });
+    }
+  }
   return {
+    places,
     labels,
     spots,
     at: spot(r.at),

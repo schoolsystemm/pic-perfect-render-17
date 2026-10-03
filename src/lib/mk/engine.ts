@@ -46,7 +46,7 @@ import {
   resolvePaneScenes,
   type MergeConfig,
 } from "./merge";
-import { TAG_SCENES, TAG_SLOTS, cleanTags, tagSpot, tagUrl, type TagConfig, type TagSlot } from "./tags";
+import { TAG_PLACE_MAX, TAG_SCENES, TAG_SLOTS, cleanTags, placeText, tagSpot, tagUrl, type TagConfig, type TagSlot } from "./tags";
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import type { Transport, TransportEvent } from "./transport";
@@ -1662,6 +1662,26 @@ export class SwitcherEngine {
   /** Change the look / text / spot of the tags. Saved at once; what is on air follows after a short pause. */
   setTags(patch: Partial<TagConfig>) {
     this.updateConfig({ tags: cleanTags({ ...this.state.config.tags, ...patch }) });
+  }
+
+  /** Save a location (name + flag / emoji) so it can be picked for any cam's tag. */
+  addTagPlace(name: string, emoji: string) {
+    const { places } = this.state.config.tags;
+    const nm = name.trim();
+    if (!nm) return;
+    if (places.length >= TAG_PLACE_MAX) {
+      this.notice(`Up to ${TAG_PLACE_MAX} saved locations`);
+      return;
+    }
+    if (places.some((p) => placeText(p).toLowerCase() === placeText({ name: nm, emoji }).toLowerCase())) return;
+    this.setTags({ places: [...places, { name: nm, emoji }] });
+  }
+
+  /** Forget a saved location. Tags already using its text keep showing it until you change them. */
+  removeTagPlace(index: number) {
+    const { places } = this.state.config.tags;
+    if (!places[index]) return;
+    this.setTags({ places: places.filter((_, i) => i !== index) });
   }
 
   /** The location text of one cam ("" = no tag for it). */
