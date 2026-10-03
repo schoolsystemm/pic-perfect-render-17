@@ -304,6 +304,29 @@ class GraphicsLibrary {
     return item;
   }
 
+  /** Overwrite one saved design with new settings (keeps its name and place in the list). */
+  update(id: string, data: LayerData): SavedGraphic | undefined {
+    this.load();
+    const cur = this.items.find((i) => i.id === id);
+    if (!cur) return undefined;
+    const clean = sanitizeLayer(cur.layer, JSON.parse(JSON.stringify(data)));
+    this.items = this.items.map((i) => (i.id === id ? { ...i, data: clean, created: Date.now() } : i));
+    this.persist();
+    return this.items.find((i) => i.id === id);
+  }
+
+  /** A copy under a free name ("Name copy", "Name copy 2"…). */
+  duplicate(id: string): SavedGraphic | undefined {
+    this.load();
+    const cur = this.items.find((i) => i.id === id);
+    if (!cur) return undefined;
+    let nm = `${cur.name} copy`.slice(0, 60);
+    for (let n = 2; this.items.some((i) => i.layer === cur.layer && i.name.toLowerCase() === nm.toLowerCase()); n++) {
+      nm = `${cur.name.slice(0, 50)} copy ${n}`;
+    }
+    return this.save(nm, cur.layer, cur.data);
+  }
+
   remove(id: string) {
     this.load();
     this.items = this.items.filter((i) => i.id !== id);

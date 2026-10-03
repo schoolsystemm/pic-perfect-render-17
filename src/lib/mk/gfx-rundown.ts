@@ -635,18 +635,33 @@ export const GRAPHIC_PACKAGES: GraphicPackage[] = [
   },
 ];
 
+/** Rundown rows from a package. Every add gets its own group token ("<packId>~<token>") so adding the same
+ *  package twice makes two separate groups; `packageSource` gets the package id back for "Save to library". */
+export const packageSource = (packageId?: string) => (packageId ?? "").split("~")[0] ?? "";
+
 export function makePackageItems(pack: GraphicPackage): RundownItem[] {
+  const group = `${pack.id}~${uid().slice(-5)}`;
   return pack.items.map((spec) => ({
     ...makeItem(spec.templateId, uid(), spec.data, spec.name),
     ...(spec.transition ? { transition: spec.transition } : {}),
     ...(spec.animMs !== undefined ? { animMs: spec.animMs } : {}),
     ...(spec.durationSec !== undefined ? { durationSec: spec.durationSec } : {}),
-    packageId: pack.id,
+    packageId: group,
     packageName: pack.name,
   }));
 }
 
 export const packageTheme = (pack: GraphicPackage) => theme(pack.themeId);
+
+/** A rundown item as a package entry (what "Save to library" stores). */
+export const itemToSpec = (i: RundownItem): PackageItemSpec => ({
+  templateId: i.templateId,
+  name: i.name,
+  data: { ...i.data },
+  transition: i.transition,
+  animMs: i.animMs,
+  durationSec: i.durationSec,
+});
 
 export function seedShows(): RundownShow[] {
   return [
@@ -937,8 +952,9 @@ class RundownStore {
     this.patchShow({ items: [...this.show.items, it] });
     this.emit({ selId: it.id });
   }
-  addPackage(packageId: string) {
-    const pack = GRAPHIC_PACKAGES.find((p) => p.id === packageId);
+  addPackage(packOrId: string | GraphicPackage) {
+    const pack =
+      typeof packOrId === "string" ? GRAPHIC_PACKAGES.find((p) => p.id === packOrId) : packOrId;
     if (!pack) return;
     const items = makePackageItems(pack);
     this.patchShow({ theme: packageTheme(pack), items: [...this.show.items, ...items] });
