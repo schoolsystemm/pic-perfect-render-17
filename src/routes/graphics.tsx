@@ -3,6 +3,7 @@ import { ArrowLeft, Copy, Download, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { GfxRundown } from "@/components/mk/gfx-rundown";
+import { LiveSetup } from "@/components/mk/live-setup";
 import { PlacePicker } from "@/components/mk/place-picker";
 import { fileToLogo, GFX_LAYERS, GFX_SCENE, layerUrl } from "@/lib/mk/graphics";
 import {
@@ -211,7 +212,7 @@ function GraphicsPage() {
   const library = useGfxLibrary();
   const [draft, setDraft] = useState<GraphicsConfig>(state.config.graphics);
   const [scene, setScene] = useState(state.config.graphicsScene);
-  const [mode, setMode] = useState<"design" | "rundown">("design");
+  const [mode, setMode] = useState<"design" | "rundown" | "live">("design");
   const [active, setActive] = useState<GfxId>("lower");
   const [backdrop, setBackdrop] = useState<Backdrop>("video");
   const [saveName, setSaveName] = useState("");
@@ -303,6 +304,7 @@ function GraphicsPage() {
             [
               ["design", "Design"],
               ["rundown", "Rundown"],
+              ["live", "Live FX & Tags"],
             ] as const
           ).map(([id, text]) => (
             <button
@@ -326,10 +328,16 @@ function GraphicsPage() {
         </main>
       )}
 
+      {mode === "live" && (
+        <main className="min-h-0 flex-1 overflow-y-auto p-1.5">
+          <LiveSetup />
+        </main>
+      )}
+
       <main
         className={cn(
           "flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5 fit:flex-row fit:overflow-hidden",
-          mode === "rundown" && "hidden",
+          mode !== "design" && "hidden",
         )}
       >
         {/* ------------------------------------------------ left: build + preview */}

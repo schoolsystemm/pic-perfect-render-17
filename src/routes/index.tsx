@@ -14,7 +14,6 @@ import { StatusBar } from "@/components/mk/status-bar";
 import { TransitionPanel } from "@/components/mk/transition-panel";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { FX_SCENE } from "@/lib/mk/fx";
-import { LivePanel } from "@/components/mk/live-panel";
 import { comms, tallyOf } from "@/lib/mk/intercom";
 import { startPrompterHost } from "@/lib/mk/prompter";
 import { useShortcuts } from "@/lib/mk/use-shortcuts";
@@ -42,8 +41,8 @@ export const Route = createFileRoute("/")({
   component: Switcher,
 });
 
-type Panel = "multiview" | "wall" | "audio" | "status" | "graphics" | "sounds" | "live";
-const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Tools", graphics: "Graphics", sounds: "Sounds", live: "Live FX" };
+type Panel = "multiview" | "wall" | "audio" | "status" | "graphics" | "sounds";
+const PANEL_LABEL: Record<Panel, string> = { multiview: "Monitors", wall: "Cam Wall", audio: "Audio", status: "Tools", graphics: "Graphics", sounds: "Sounds" };
 
 function Switcher() {
   const state = useSwitcher();
@@ -55,15 +54,15 @@ function Switcher() {
     const t = tallyOf(state);
     comms.setTally(t.pgm, t.pvw, state.config.camScenes);
   }, [state]);
-  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, wall: true, audio: true, status: true, graphics: true, sounds: true, live: true });
+  const [show, setShow] = useState<Record<Panel, boolean>>({ multiview: true, wall: true, audio: true, status: true, graphics: true, sounds: true });
   const toggle = (p: Panel) => setShow((s) => ({ ...s, [p]: !s[p] }));
   // MK's own helper sources (graphics layers, the sound-pad clip) are not mixer inputs.
   const mixInputs = state.audio.filter((c) => !/^MK /i.test(c.name));
   const hiddenAudio = state.config.hiddenAudio;
   const stripInputs = mixInputs.filter((c) => !hiddenAudio.includes(c.name));
-  const bottom = show.audio || show.status || show.graphics || show.sounds || show.live;
+  const bottom = show.audio || show.status || show.graphics || show.sounds;
 
-  const menus = (["multiview", "wall", "audio", "status", "graphics", "sounds", "live"] as Panel[]).map((p) => (
+  const menus = (["multiview", "wall", "audio", "status", "graphics", "sounds"] as Panel[]).map((p) => (
     <button
       key={p}
       type="button"
@@ -184,20 +183,6 @@ function Switcher() {
                   <GraphicsPanel graphics={state.config.graphics} active={state.gfxActive} />
                 </div>
               )}
-              {show.live && (
-                <div className="min-w-0 fit:w-[17rem] fit:shrink-0">
-                  <LivePanel
-                    live={state.live}
-                    pips={state.config.pips}
-                    ad={state.config.ad}
-                    presets={state.config.adPresets}
-                    adActive={state.config.adActive}
-                    scenes={state.config.camScenes.filter((s): s is string => !!s)}
-                    connected={state.status === "connected"}
-                    busy={state.fx.running}
-                  />
-                </div>
-              )}
               {show.sounds && (
                 <div className="h-32 min-w-0 fit:h-auto fit:w-[13.5rem] fit:shrink-0">
                   <SoundPad />
@@ -226,8 +211,6 @@ function Switcher() {
             pipScenes={state.config.pips.map((p) => p.scene)}
             adScene={state.config.ad.scene}
             adName={state.config.adPresets[state.config.adActive]?.name}
-            adPresets={state.config.adPresets}
-            adActive={state.config.adActive}
             mergePresets={state.config.mergePresets}
             mergeActive={state.config.mergeActive}
             onPip={(slot) => void engine.togglePip(slot)}
