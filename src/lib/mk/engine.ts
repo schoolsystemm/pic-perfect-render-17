@@ -133,6 +133,10 @@ export class SwitcherEngine {
   private mergeReady = false;
   /** The location-tag scenes / browser sources exist in OBS, so the buses may hold their items. */
   private tagsReady = false;
+  /** Tag slots whose OBS scene + browser source really exist (made on demand, not all six up front). */
+  private tagMade = new Set<number>();
+  private mergeFollowing = false;
+  private mergeFollowAgain = false;
   /** What each tag browser source was last pointed at (url + size), so unchanged tags are never reloaded. */
   private tagCache = new Map<number, string>();
   /** The tag layout last drawn; an identical one needs no work. */
@@ -266,6 +270,7 @@ export class SwitcherEngine {
     this.live = null;
     this.mergeReady = false;
     this.tagsReady = false;
+    this.tagMade.clear();
     this.tagCache.clear();
     this.tagKey = "";
     this.recovering = false;
@@ -377,6 +382,7 @@ export class SwitcherEngine {
             this.set({ programScene: main, program: this.camForScene(main) });
             this.applyAfv();
             if (this.state.config.dsks.some((d) => d.source && !d.scene)) void this.syncDsks();
+            void this.followMergePanes();
             break;
           }
           // OBS itself left the live buses (operator picked a plain scene in OBS): follow it.
@@ -401,6 +407,7 @@ export class SwitcherEngine {
           if (main) {
             this.setLive({ previewBus: event.scene });
             this.set({ previewScene: main, preview: this.camForScene(main) });
+            void this.followMergePanes();
           } else if (!this.state.fx.running && this.camForScene(event.scene) !== null) {
             // A plain scene was picked as preview inside OBS: route it into the free live bus so PIPs stay on.
             void this.liveRetarget(event.scene);
@@ -503,6 +510,7 @@ export class SwitcherEngine {
     if (!scene) return;
     if (this.live) {
       await this.liveRetarget(scene);
+      await this.followMergePanes();
       return;
     }
     const ok = await this.send("Preview", (t) => t.setPreviewScene(scene));
@@ -527,6 +535,7 @@ export class SwitcherEngine {
         await t.fxStage(this.fxCams(), scene, scene, bus);
         await this.liveDrawMain(bus, scene);
       });
+      await this.followMergePanes();
       return;
     }
     await this.send("Program", (t) => t.setProgramScene(scene));
@@ -1097,9 +1106,11 @@ export class SwitcherEngine {
   private overlaySources(): string[] {
     const { ad, dsks } = this.state.config;
     const dskSources = dsks.map((d) => d.source).filter((n): n is string => !!n && n !== ad.scene && !this.fxCams().includes(n));
-    const merge = this.mergeReady ? [MERGE_BG, ...MERGE_PANES] : [];
-    const tags = this.tagsReady ? TAG_SCENES : [];
-    return [...new Set([...(ad.scene ? [ad.scene] : []), ...merge, ...tags, ...PIP_SCENES, ...dskSources])];
+    // Only helper scenes that are really in use exist in OBS: panes up to the layout's count, PIPs with a scene, tags with text.
+    const merge = this.mergeReady ? [MERGE_BG, ...MERGE_PANES.slice(0, mergeLayoutById(this.activeMerge().layout).panes)] : [];
+    const tags = this.tagsReady ? TAG_SCENES.filter((_, i) => this.tagMade.has(i)) : [];
+    const pips = PIP_SCENES.filter((_, i) => !!this.state.config.pips[i]?.scene);
+    return [...new Set([...(ad.scene ? [ad.scene] : []), ...merge, ...tags, ...pips, ...dskSources])];
   }
 
   /** Where a DSK that rides in the bus sits, inside `region` (the squeezed picture area, or the whole screen). */
@@ -1204,7 +1215,7 @@ export class SwitcherEngine {
       for (let i = 0; i < PIP_SCENES.length; i++) await t.pipAssign(i, this.state.config.pips[i]?.scene ?? null);
       const { width, height } = await t.fxStage(cams, prog, prog, A);
       await t.fxStage(cams, prev, prev, B);
-      await this.prepareMerge(this.activeMerge().color);
+      await this.prepareMerge(this.activeMerge());
       const overlays = this.overlaySources();
       await t.liveEnsure(A, overlays, this.adUnder());
       await t.liveEnsure(B, overlays, this.adUnder());
@@ -1273,8 +1284,9 @@ export class SwitcherEngine {
       const mainB = pick(rb);
       const { width, height } = await t.fxStage(cams, mainA, mainA, A);
       await t.fxStage(cams, mainB, mainB, B);
-      await this.prepareMerge(this.activeMerge().color);
+      await this.prepareMerge(this.activeMerge());
       this.tagsReady = TAG_SCENES.some((n) => n in ra || n in rb);
+      this.tagMade = new Set(TAG_SCENES.flatMap((n, i) => (n in ra || n in rb ? [i] : [])));
       const overlays = this.overlaySources();
       await t.liveEnsure(A, overlays, this.adUnder());
       await t.liveEnsure(B, overlays, this.adUnder());
@@ -1377,11 +1389,11 @@ export class SwitcherEngine {
   }
 
   /** Create the merge helper scenes in OBS (once per connection). Throws when `strict` and OBS refuses. */
-  private async prepareMerge(color: string, strict = false) {
+  private async prepareMerge(cfg: MergeConfig, strict = false) {
     const t = this.transport;
     if (!t) return;
     try {
-      await t.mergePrepare(color);
+      await t.mergePrepare(cfg.color, mergeLayoutById(cfg.layout).panes);
       this.mergeReady = true;
     } catch (error) {
       this.mergeReady = false;
@@ -1412,7 +1424,7 @@ export class SwitcherEngine {
   private async applyMergePanes(cfg: MergeConfig, scenes: string[]) {
     const t = this.transport;
     if (!t || !this.live) return;
-    await this.prepareMerge(cfg.color, true);
+    await this.prepareMerge(cfg, true);
     const n = mergeLayoutById(cfg.layout).panes;
     for (let i = 0; i < MERGE_PANES.length; i++) await t.paneAssign(i, i < n ? scenes[i] || null : null);
     const overlays = this.overlaySources();
@@ -1470,6 +1482,42 @@ export class SwitcherEngine {
       this.set({ fx: { running: false, layout: null }, tBar: 0, transitioning: false });
     }
     await this.maybeExitLive();
+  }
+
+  /**
+   * While Merge is on, the automatic panes follow the buses: pane 1 = PGM cam, pane 2 = PVW cam (a pane you pinned in
+   * the Merge editor stays put). Light on purpose (only the pane that changed is re-pointed, never blocks the buttons),
+   * and taps that arrive meanwhile are coalesced, so picking Preview always lands.
+   */
+  private async followMergePanes() {
+    if (this.mergeFollowing) {
+      this.mergeFollowAgain = true;
+      return;
+    }
+    this.mergeFollowing = true;
+    try {
+      do {
+        this.mergeFollowAgain = false;
+        await this.followMergeOnce();
+      } while (this.mergeFollowAgain);
+    } finally {
+      this.mergeFollowing = false;
+    }
+  }
+
+  private async followMergeOnce() {
+    const t = this.transport;
+    if (!t || !this.live || !this.state.live.merge || this.state.fx.running || !this.mergeReady) return;
+    const cfg = this.activeMerge();
+    const scenes = resolvePaneScenes(cfg, this.fxCams(), this.state.programScene, this.state.previewScene);
+    const cur = this.state.live.mergeScenes;
+    try {
+      for (let i = 0; i < scenes.length; i++) if (scenes[i] !== cur[i]) await t.paneAssign(i, scenes[i] || null);
+      this.setLive({ mergeScenes: scenes });
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`Merge: could not follow the preview${why}`);
+    }
   }
 
   /** The merge on air follows an edited / newly picked preset at once (hard change, nothing glides). */
@@ -1600,12 +1648,24 @@ export class SwitcherEngine {
     const key = JSON.stringify([this.state.live.merge, slots.map((s) => [s.slot, s.url, s.w, s.h, s.x, s.y])]);
     if (!force && key === this.tagKey) return;
     this.tagKey = key;
+    let made = false;
     for (let i = 0; i < TAG_SLOTS; i++) {
       const s = slots.find((x) => x.slot === i);
+      if (!s && !this.tagMade.has(i)) continue; // never made a scene for a tag nobody uses
       const ck = s ? `${s.url}|${s.w}|${s.h}` : "";
       if (this.tagCache.get(i) === ck) continue;
       await t.tagSet(i, s ? s.url : null, s ? s.w : 2, s ? s.h : 2);
       this.tagCache.set(i, ck);
+      if (!this.tagMade.has(i)) {
+        this.tagMade.add(i);
+        made = true;
+      }
+    }
+    if (made) {
+      const overlays = this.overlaySources();
+      const bus = this.progBus();
+      await t.liveEnsure(bus, overlays, this.adUnder());
+      await t.liveEnsure(this.otherBus(bus), overlays, this.adUnder());
     }
     await this.liveDrawOverlays(this.progBus());
     await this.liveSyncFree();
@@ -1631,8 +1691,7 @@ export class SwitcherEngine {
     this.set({ fx: { running: true, layout: null } });
     try {
       if (turningOn) {
-        for (let i = 0; i < TAG_SLOTS; i++) await t.tagSet(i, null, 2, 2); // creates the scenes + browser sources
-        this.tagsReady = true;
+        this.tagsReady = true; // the scenes + browser sources are made on demand, per tag in use (syncTags)
         this.tagCache.clear();
         this.tagKey = "";
         const overlays = this.overlaySources();
@@ -1652,6 +1711,7 @@ export class SwitcherEngine {
       const why = error instanceof Error && error.message ? ` (${error.message})` : "";
       this.notice(`Tags: OBS did not apply it${why}`);
       this.tagsReady = false;
+      this.tagMade.clear();
       this.setLive({ tags: false });
     } finally {
       this.set({ fx: { running: false, layout: null } });

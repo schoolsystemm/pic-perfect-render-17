@@ -110,7 +110,7 @@ export interface Transport {
   /** Location tags: make sure "MK TAG n" holds its browser source and point it at `url`, sized w x h (null url = clear it). */
   tagSet(slot: number, url: string | null, w: number, h: number): Promise<void>;
   /** Make sure the merge helper scenes exist (6 pane scenes + the border colour scene) and the border colour is set. */
-  mergePrepare(color: string): Promise<void>;
+  mergePrepare(color: string, panes?: number): Promise<void>;
   /**
    * Make sure `scene` has an (initially hidden) item for each source and stack them on top, first = lowest.
    * Names in `under` are sent to the very BOTTOM instead (the full-screen advertisement of the frame look).

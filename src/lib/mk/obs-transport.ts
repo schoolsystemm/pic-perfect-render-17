@@ -574,18 +574,20 @@ export class ObsTransport implements Transport {
     if (exists) {
       await this.obs.call("SetInputSettings", { inputName: name, inputSettings: settings, overlay: true });
       try {
-        await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: name });
+        const { sceneItemId } = await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: name });
+        await this.lockItem(scene, sceneItemId);
       } catch {
-        await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: name, sceneItemEnabled: false });
+        await this.createLocked(scene, name, false);
       }
     } else {
-      await this.obs.call("CreateInput", {
+      const made = await this.obs.call("CreateInput", {
         sceneName: scene,
         inputName: name,
         inputKind: "browser_source",
         inputSettings: settings,
         sceneItemEnabled: false,
       });
+      await this.lockItem(scene, made.sceneItemId);
     }
   }
 
@@ -785,6 +787,23 @@ export class ObsTransport implements Transport {
     return table;
   }
 
+  /** Lock an item in OBS so nobody drags it by accident (the controller still moves it through the websocket). */
+  private async lockItem(scene: string, id: number | undefined) {
+    if (typeof id !== "number") return;
+    try {
+      await this.obs.call("SetSceneItemLocked", { sceneName: scene, sceneItemId: id, sceneItemLocked: true });
+    } catch {
+      /* locking is cosmetic — never block the switcher on it */
+    }
+  }
+
+  /** Add `source` to `scene` as a LOCKED item. Everything the switcher builds in OBS goes in through here. */
+  private async createLocked(scene: string, source: string, enabled: boolean): Promise<number> {
+    const res = await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: source, sceneItemEnabled: enabled });
+    await this.lockItem(scene, res.sceneItemId);
+    return res.sceneItemId;
+  }
+
   private async ensureScene(scene: string) {
     const scenes = await this.getScenes();
     if (!scenes.includes(scene)) await this.obs.call("CreateScene", { sceneName: scene });
@@ -810,9 +829,10 @@ export class ObsTransport implements Transport {
       else await this.obs.call("RemoveSceneItem", { sceneName: scene, sceneItemId: id });
     }
     if (keptId === null) {
-      await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: stage, sceneItemEnabled: true });
+      await this.createLocked(scene, stage, true);
     } else {
       await this.obs.call("SetSceneItemEnabled", { sceneName: scene, sceneItemId: keptId, sceneItemEnabled: true });
+      await this.lockItem(scene, keptId);
     }
     this.tables.delete(stage);
     this.staged.add(scene);
@@ -843,8 +863,7 @@ export class ObsTransport implements Transport {
     const table = await this.loadTable(scene);
     for (const cam of cams) {
       if (table.ids.has(cam)) continue;
-      const res = await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: cam, sceneItemEnabled: false });
-      table.ids.set(cam, res.sceneItemId);
+      table.ids.set(cam, await this.createLocked(scene, cam, false));
       table.on.set(cam, false);
     }
     const b = table.ids.get(bottom);
@@ -863,8 +882,7 @@ export class ObsTransport implements Transport {
     const table = this.tables.get(scene) ?? (await this.loadTable(scene));
     for (const name of sources) {
       if (table.ids.has(name)) continue;
-      const res = await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: name, sceneItemEnabled: false });
-      table.ids.set(name, res.sceneItemId);
+      table.ids.set(name, await this.createLocked(scene, name, false));
       table.on.set(name, false);
     }
     this.overlayOrder.set(scene, { over: sources.filter((n) => !under.includes(n)), under: sources.filter((n) => under.includes(n)) });
@@ -905,6 +923,8 @@ export class ObsTransport implements Transport {
 
   /** A wrapper scene holds exactly the one scene / source assigned to it (PIP n, merge pane n). */
   private async assignWrapper(wrapper: string, source: string | null) {
+    // An unused slot never gets a scene of its own: fewer MK scenes in OBS.
+    if (!source && !(await this.getScenes()).includes(wrapper)) return;
     await this.ensureScene(wrapper);
     const list = await this.obs.call("GetSceneItemList", { sceneName: wrapper });
     const items = list.sceneItems;
@@ -912,7 +932,7 @@ export class ObsTransport implements Transport {
     if (!source && items.length === 0) return;
     if (source) {
       // Add the new one first: if OBS refuses (e.g. it would nest a scene inside itself) the old one stays.
-      await this.obs.call("CreateSceneItem", { sceneName: wrapper, sourceName: source, sceneItemEnabled: true });
+      await this.createLocked(wrapper, source, true);
     }
     for (const it of items) await this.obs.call("RemoveSceneItem", { sceneName: wrapper, sceneItemId: Number(it["sceneItemId"]) });
   }
@@ -938,7 +958,8 @@ export class ObsTransport implements Transport {
       exists = false;
     }
     if (!exists) {
-      await this.obs.call("CreateInput", { sceneName: scene, inputName: input, inputKind: "browser_source", inputSettings: settings, sceneItemEnabled: true });
+      const made = await this.obs.call("CreateInput", { sceneName: scene, inputName: input, inputKind: "browser_source", inputSettings: settings, sceneItemEnabled: true });
+      await this.lockItem(scene, made.sceneItemId);
       return;
     }
     await this.obs.call("SetInputSettings", { inputName: input, inputSettings: settings, overlay: true });
@@ -946,15 +967,17 @@ export class ObsTransport implements Transport {
     try {
       id = (await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: input })).sceneItemId;
     } catch {
-      id = (await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: input, sceneItemEnabled: true })).sceneItemId;
+      id = await this.createLocked(scene, input, true);
     }
     await this.obs.call("SetSceneItemEnabled", { sceneName: scene, sceneItemId: id, sceneItemEnabled: true });
+    await this.lockItem(scene, id);
   }
 
-  async mergePrepare(color: string) {
+  /** Border colour scene + the first `panes` pane scenes (the rest are made only when a bigger layout is picked). */
+  async mergePrepare(color: string, panes: number = MERGE_PANES.length) {
     const video = await this.obs.call("GetVideoSettings");
     await this.ensureScene(MERGE_BG);
-    for (const pane of MERGE_PANES) await this.ensureScene(pane);
+    for (const pane of MERGE_PANES.slice(0, Math.max(1, panes))) await this.ensureScene(pane);
     const settings = { color: obsColor(color), width: video.baseWidth, height: video.baseHeight };
     let exists = true;
     try {
@@ -967,16 +990,17 @@ export class ObsTransport implements Transport {
       try {
         await this.obs.call("GetSceneItemId", { sceneName: MERGE_BG, sourceName: MERGE_COLOR_INPUT });
       } catch {
-        await this.obs.call("CreateSceneItem", { sceneName: MERGE_BG, sourceName: MERGE_COLOR_INPUT, sceneItemEnabled: true });
+        await this.createLocked(MERGE_BG, MERGE_COLOR_INPUT, true);
       }
     } else {
-      await this.obs.call("CreateInput", {
+      const made = await this.obs.call("CreateInput", {
         sceneName: MERGE_BG,
         inputName: MERGE_COLOR_INPUT,
         inputKind: "color_source_v3",
         inputSettings: settings,
         sceneItemEnabled: true,
       });
+      await this.lockItem(MERGE_BG, made.sceneItemId);
     }
   }
 
