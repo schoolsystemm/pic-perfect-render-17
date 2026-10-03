@@ -47,6 +47,18 @@ function rgba(hex: string, opacity: number, fallback = "#0a0c10") {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
+/** Lighten (f>0) or darken (f<0) a colour: 1 = white, -1 = black. */
+function shade(hex: string, f: number) {
+  let h = color(hex, "#808080").slice(1);
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const n = parseInt(h.slice(0, 6), 16);
+  const m = (v: number) => Math.round(f >= 0 ? v + (255 - v) * f : v * (1 + f));
+  return "#" + [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => m(v).toString(16).padStart(2, "0")).join("");
+}
+
+const BARLOW = "'Barlow Semi Condensed','Barlow Condensed','Arial Narrow',Arial,sans-serif";
+const BARLOW_IMPORT = "@import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&display=swap');";
+
 const FONT: Record<GfxFont, string> = {
   sans: "'Segoe UI',Arial,sans-serif",
   condensed: "'Barlow Condensed','Arial Narrow','Roboto Condensed',Arial,sans-serif",
@@ -54,6 +66,10 @@ const FONT: Record<GfxFont, string> = {
   mono: "Consolas,'JetBrains Mono',monospace",
 };
 const font = (f: string) => FONT[f as GfxFont] ?? FONT.sans;
+/** The broadcast looks use Barlow whenever the Condensed font is picked. */
+const fontB = (f: string) => (f === "condensed" ? BARLOW : font(f));
+/** Glossy bar: lighter top half, darker bottom half, hard split in the middle. */
+const gloss = (c: string) => `linear-gradient(180deg,${shade(c, 0.03)} 0,${shade(c, 0.18)} 50%,${shade(c, -0.28)} 50%,${shade(c, -0.03)} 100%)`;
 
 const toDataUrl = (html: string) => `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 
@@ -102,7 +118,7 @@ const scale = (n: number) => Math.max(0.3, Math.min(3, (Number(n) || 100) / 100)
 
 const page = (css: string, body: string, script = "") =>
   toDataUrl(
-    `<!doctype html><html><head><meta charset="utf-8"><style>${BASE}${css}</style></head><body>${body}${script ? `<script>${script}</script>` : ""}</body></html>`,
+    `<!doctype html><html><head><meta charset="utf-8"><style>${css.includes("Barlow Semi") ? BARLOW_IMPORT : ""}${BASE}${css}</style></head><body>${body}${script ? `<script>${script}</script>` : ""}</body></html>`,
   );
 
 /** Perceived brightness 0..255. */
@@ -232,7 +248,8 @@ function ticker(g: GraphicsConfig) {
   const once = g.ticker.loop === false;
   const k = scale(size);
   const at = spot(g.ticker.at);
-  const barH = 7 * k; // vh
+  const bc = style === "broadcast";
+  const barH = (bc ? 6.25 : 7) * k; // vh
   // Hand-placed: y 0 = top edge, 1 = bottom edge. The bar slides in from whichever side it is nearer.
   const edge = at ? `top:${(at.y * Math.max(0, 100 - barH)).toFixed(3)}vh` : pos === "top" ? "top:0" : "bottom:0";
   const fromTop = at ? at.y < 0.5 : pos === "top";
@@ -242,25 +259,31 @@ function ticker(g: GraphicsConfig) {
   const a = color(accent, "#e5322d");
   const txt = color(g.ticker.textColor, "#ffffff");
   const news = style === "news";
-  const bgc =
-    style === "glass"
+  const bg0 = color(g.ticker.bg, "#ececec");
+  const bgc = bc
+    ? `background:linear-gradient(180deg,${shade(bg0, -0.06)} 0,${bg0} 14%,${bg0} 50%,${shade(bg0, -0.05)} 50%,${shade(bg0, -0.01)} 96%,${shade(bg0, -0.07)} 100%)`
+    : style === "glass"
       ? `background:${rgba(g.ticker.bg, Math.min(g.ticker.bgOpacity, 55))};backdrop-filter:blur(14px);border-top:1px solid rgba(255,255,255,.25)`
       : style === "outline"
         ? `background:${rgba(g.ticker.bg, g.ticker.bgOpacity)};border-top:.25vw solid ${a};border-bottom:.25vw solid ${a};box-sizing:border-box`
         : `background:${rgba(g.ticker.bg, g.ticker.bgOpacity)}`;
   // News bar: several headlines (new lines or " | ") are run together with diamonds.
-  const shown = news
+  const shown = news || bc
     ? text.split(/\n+| \| /).map((t) => t.trim()).filter(Boolean).join("     ◆     ")
     : text;
-  const lbText = news ? contrast(a) : "#fff";
+  const lbText = bc ? "#fff" : news ? contrast(a) : "#fff";
   return page(
-    `.tk{position:absolute;left:0;right:0;${edge};height:${(7 * k).toFixed(2)}vh;display:flex;${bgc};color:${txt};font-family:${font(g.ticker.font)};overflow:hidden;animation:up .5s ease both${once ? `,out .5s ease ${(secs + 0.5).toFixed(1)}s forwards` : ""}}
+    `.tk{position:absolute;left:0;right:0;${edge};height:${barH.toFixed(2)}vh;display:flex;${bgc};color:${txt};font-family:${font(g.ticker.font)};overflow:hidden;animation:up .5s ease both${once ? `,out .5s ease ${(secs + 0.5).toFixed(1)}s forwards` : ""}}
 .lb{background:${a};color:${lbText};padding:0 2vw;display:flex;align-items:center;font-weight:800;font-size:${(2.4 * k).toFixed(2)}vw;letter-spacing:.1em;z-index:2${news ? ";box-shadow:.4vw 0 1.2vw rgba(0,0,0,.35)" : ""}}
 .tr{flex:1;position:relative;overflow:hidden}
 .tx{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;font-size:${(2.6 * k).toFixed(2)}vw;animation:mq ${secs}s linear ${once ? "1 forwards" : "infinite"}}
 @keyframes mq{from{transform:${move}}to{transform:${to}}}
 @keyframes up{from{transform:translateY(${from})}to{transform:none}}
-@keyframes out{from{transform:none}to{transform:translateY(${from})}}`,
+@keyframes out{from{transform:none}to{transform:translateY(${from})}}${
+      bc
+        ? `.tk{font-family:${fontB(g.ticker.font)}}.lb{background:${gloss(a)};min-width:6.6vw;box-sizing:border-box;padding:0 1vw 0 .6vw;font-weight:700;font-size:${(2.3 * k).toFixed(2)}vw;letter-spacing:.02em;text-shadow:0 .1vw .15vw rgba(0,0,0,.35);box-shadow:none}.tx{font-size:${(2.1 * k).toFixed(2)}vw;font-weight:500}`
+        : ""
+    }`,
     `<div class="tk">${label ? `<div class="lb">${esc(label)}</div>` : ""}<div class="tr"><div class="tx">${esc(shown)}</div></div></div>`,
   );
 }
@@ -301,6 +324,18 @@ function badge(g: GraphicsConfig) {
   const col = color(c, "#e5322d");
   const txt = color(B.textColor, "#ffffff");
   const head = `.sc{${where}}${enter(B.anim, sideOf(pos, at), msOf(B))}@keyframes p{50%{opacity:.25}}`;
+
+  if (style === "gloss") {
+    const right = pos === "tr" || pos === "br";
+    const where2 = at
+      ? where
+      : `position:absolute;${right ? "right:0" : "left:0"};${pos === "bl" || pos === "br" ? "bottom:10vh" : "top:1vh"};transform:scale(${scale(B.size)});transform-origin:${ORIGIN[pos]}`;
+    return page(
+      `.sc{${where2}}${enter(B.anim, sideOf(pos, at), msOf(B))}
+.g{display:flex;align-items:center;box-sizing:border-box;width:12.5vw;height:2.94vw;padding-left:.74vw;border-left:.44vw solid ${shade(col, -0.32)};border-bottom:.15vw solid ${shade(col, -0.55)};background:${gloss(col)};color:${txt};font-family:${fontB(B.font)};font-weight:700;font-size:1.7vw;letter-spacing:.03em;text-shadow:0 .1vw .15vw rgba(0,0,0,.35);white-space:nowrap}`,
+      `<div class="sc"><div class="an"><div class="g">${esc(text)}</div></div></div>`,
+    );
+  }
 
   if (style === "location") {
     const locBg = color(B.locBg, "#0a1628");
@@ -347,27 +382,33 @@ function news(g: GraphicsConfig) {
   const start = Math.max(0, Math.min(Math.max(0, tags.length - 1), Math.round(num(N.start, 0, 0, 19))));
   const hasBelow = tags.some((t) => t.below.trim());
   const json = JSON.stringify(tags).replace(/</g, "\\u003c");
+  const ff = fontB(N.font);
+  const mainTxt = readable(N.textColor, prim);
+  const belowTxt = readable(N.textColor, dark);
   return page(
-    `.sc{position:absolute;left:3vw;bottom:9.5vh;transform:scale(${scale(N.size)});transform-origin:bottom left}${enter(N.anim, "l", msOf(N))}
-.st{display:inline-flex;flex-direction:column;align-items:flex-start;max-width:74vw;font-family:${font(N.font)}}
-.kk{background:${acc};color:${contrast(acc)};font-size:1.4vw;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:.25vw 1.2vw;margin-left:.73vw;white-space:nowrap}
-.mn{display:flex;box-shadow:0 .5vw 1.6vw rgba(0,0,0,.35)}
-.ab{width:.73vw;background:${acc};flex:none}
-.mt{background:${prim};color:${readable(N.textColor, prim)};min-width:26vw;height:7vw;box-sizing:border-box;padding:0 2.1vw;display:flex;align-items:center;overflow:hidden}
-.mt div{font-size:3vw;font-weight:800;line-height:1.08;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.bl{margin-left:.73vw;background:${rgba(dark, 96)};color:${readable(N.textColor, dark)};min-width:20vw;height:3.2vw;box-sizing:border-box;padding:0 2.1vw;display:flex;align-items:center;overflow:hidden;max-width:calc(74vw - .73vw)}
-.bl div{font-size:1.7vw;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    `.sc{position:absolute;left:.44vw;bottom:7vh;transform:scale(${scale(N.size)});transform-origin:bottom left}${enter(N.anim, "l", msOf(N))}
+.st{width:85.9vw;font-family:${ff}}
+.kk{display:inline-block;box-sizing:border-box;height:2.57vw;line-height:2.4vw;background:${acc};border-top:.15vw solid ${shade(acc, -0.55)};color:${contrast(acc)};font-size:2vw;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:0 2.94vw;white-space:nowrap}
+.rw{display:flex}.ab{width:.88vw;flex:none}
+.r1 .ab{background:linear-gradient(180deg,${shade(acc, -0.33)},${rgba(shade(acc, -0.33), 55)})}
+.r2 .ab{background:linear-gradient(180deg,${shade(acc, -0.65)},${shade(acc, -0.35)})}
+.mt{flex:1;min-width:0;height:3.55vw;display:flex;align-items:center;overflow:hidden;background:linear-gradient(180deg,${shade(prim, 0.01)},${shade(prim, -0.015)} 55%,${shade(prim, 0.03)});color:${mainTxt}}
+.bl{flex:1;min-width:0;height:3.6vw;display:flex;align-items:center;overflow:hidden;background:${dark};box-shadow:inset 0 -.15vw 0 ${shade(dark, 0.1)};color:${belowTxt}}
+.mt div,.bl div{box-sizing:border-box;width:100%;padding:0 2.2vw;white-space:nowrap;overflow:hidden}
+.mt div{font-size:2.63vw;font-weight:700;line-height:1.1;text-transform:uppercase}
+.bl div{font-size:2.2vw;font-weight:600;line-height:1.15;font-variant:small-caps;letter-spacing:.02em}
 .o{animation:so .28s ease-in both}.i{animation:si .5s cubic-bezier(.2,.8,.2,1) both}
 @keyframes so{to{opacity:0;transform:translateY(-35%)}}@keyframes si{from{opacity:0;transform:translateY(45%)}to{opacity:1;transform:none}}`,
-    `<div class="sc"><div class="an"><div class="st">${kicker ? `<div class="kk">${esc(kicker)}</div>` : ""}${tags.length ? `<div class="mn"><div class="ab"></div><div class="mt"><div id="m"></div></div></div>${hasBelow ? `<div class="bl"><div id="b"></div></div>` : ""}` : ""}</div></div></div><!--${Math.round(num(N.run, 0, 0, 1e9))}-->`,
+    `<div class="sc"><div class="an"><div class="st">${kicker ? `<div class="kk">${esc(kicker)}</div>` : ""}${tags.length ? `<div class="rw r1"><div class="ab"></div><div class="mt"><div id="m"></div></div></div>${hasBelow ? `<div class="rw r2"><div class="ab"></div><div class="bl"><div id="b"></div></div></div>` : ""}` : ""}</div></div></div><!--${Math.round(num(N.run, 0, 0, 1e9))}-->`,
     tags.length
       ? `var T=${json},MS=${ms},LOOP=${N.loop === false ? "false" : "true"},i=${start};
-var m=document.getElementById('m'),b=document.getElementById('b'),bl=b&&b.parentNode;
-function put(n){var t=T[n];m.textContent=t.main;if(b){b.textContent=t.below;bl.style.visibility=t.below.trim()?'visible':'hidden'}}
+var m=document.getElementById('m'),b=document.getElementById('b'),bl=b&&b.closest('.r2');
+function fit(e){e.style.fontSize='';var s=parseFloat(getComputedStyle(e).fontSize);while(e.scrollWidth>e.clientWidth&&s>8){s-=.5;e.style.fontSize=s+'px'}}
+function put(n){var t=T[n];m.textContent=t.main;fit(m);if(b){b.textContent=t.below;bl.style.visibility=t.below.trim()?'visible':'hidden';fit(b)}}
 function fx(c){m.className=c;if(b)b.className=c;if(b&&c==='i')b.style.animationDelay='.09s';else if(b)b.style.animationDelay='0s'}
 function go(n){fx('o');setTimeout(function(){i=n;put(i);fx('i');wait()},280)}
 function wait(){if(T.length<2)return;if(i>=T.length-1&&!LOOP)return;setTimeout(function(){go(i>=T.length-1?0:i+1)},MS)}
-put(i);fx('i');wait();`
+put(i);fx('i');wait();if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){put(i)});`
       : "",
   );
 }

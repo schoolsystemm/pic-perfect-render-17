@@ -87,16 +87,18 @@ export const LOWER_STYLES: { id: LowerStyle; label: string }[] = [
   { id: "box", label: "Boxed" },
 ];
 
-export type TickerStyle = "solid" | "glass" | "outline" | "news";
+export type TickerStyle = "solid" | "glass" | "outline" | "news" | "broadcast";
 export const TICKER_STYLES: { id: TickerStyle; label: string }[] = [
+  { id: "broadcast", label: "Broadcast bar (gloss)" },
   { id: "news", label: "News bar" },
   { id: "solid", label: "Solid" },
   { id: "glass", label: "Glass" },
   { id: "outline", label: "Outline" },
 ];
 
-export type BadgeStyle = "solid" | "outline" | "glass" | "location";
+export type BadgeStyle = "solid" | "outline" | "glass" | "location" | "gloss";
 export const BADGE_STYLES: { id: BadgeStyle; label: string }[] = [
+  { id: "gloss", label: "Gloss LIVE" },
   { id: "location", label: "Live + location" },
   { id: "solid", label: "Solid" },
   { id: "outline", label: "Outline" },
@@ -365,10 +367,10 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
     loop: true,
     start: 0,
     run: 0,
-    primary: "#0b4fa8",
-    accent: "#f5b700",
-    bg: "#0a1628",
-    textColor: "#ffffff",
+    primary: "#e8e8e8",
+    accent: "#cf0102",
+    bg: "#1d1d1d",
+    textColor: "#262626",
     size: 100,
     font: "condensed",
     anim: "slide",
