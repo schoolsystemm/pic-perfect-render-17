@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Copy, Download, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { GfxRundown } from "@/components/mk/gfx-rundown";
 import { PlacePicker } from "@/components/mk/place-picker";
 import { fileToLogo, GFX_LAYERS, GFX_SCENE, layerUrl } from "@/lib/mk/graphics";
 import {
@@ -21,11 +22,14 @@ import {
   BADGE_STYLES,
   CLOCK_STYLES,
   DEFAULT_GRAPHICS,
+  FULL_KINDS,
   GFX_ANIMS,
   GFX_FONTS,
+  GFX_IDS,
   LOWER_STYLES,
   TICKER_STYLES,
   type Corner,
+  type FullKind,
   type GfxAnim,
   type GfxId,
   type GraphicsConfig,
@@ -207,6 +211,7 @@ function GraphicsPage() {
   const library = useGfxLibrary();
   const [draft, setDraft] = useState<GraphicsConfig>(state.config.graphics);
   const [scene, setScene] = useState(state.config.graphicsScene);
+  const [mode, setMode] = useState<"design" | "rundown">("design");
   const [active, setActive] = useState<GfxId>("lower");
   const [backdrop, setBackdrop] = useState<Backdrop>("video");
   const [saveName, setSaveName] = useState("");
@@ -230,6 +235,22 @@ function GraphicsPage() {
       say(e instanceof Error ? e.message : "Could not read that share link");
     }
   }, [share]);
+
+  // When a layer changes outside this editor (Graphics Rundown take, switcher panel), mirror it into the
+  // draft so a later Save can never put an older copy back on air.
+  const prevCfg = useRef(state.config.graphics);
+  useEffect(() => {
+    const was = prevCfg.current;
+    const now = state.config.graphics;
+    prevCfg.current = now;
+    const changed = GFX_IDS.filter((id) => JSON.stringify(was[id]) !== JSON.stringify(now[id]));
+    if (changed.length === 0) return;
+    setDraft((d) => {
+      const n = { ...d } as Record<GfxId, unknown>;
+      for (const id of changed) n[id] = now[id];
+      return n as unknown as GraphicsConfig;
+    });
+  }, [state.config.graphics]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(state.config.graphics) || scene !== state.config.graphicsScene;
 
@@ -277,10 +298,40 @@ function GraphicsPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Switcher
         </Link>
         <h1 className="text-base leading-none tracking-[0.2em] text-foreground">GRAPHICS STUDIO</h1>
+        <div className="ml-2 flex gap-1" role="tablist" aria-label="Graphics Studio view">
+          {(
+            [
+              ["design", "Design"],
+              ["rundown", "Rundown"],
+            ] as const
+          ).map(([id, text]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={mode === id}
+              onClick={() => setMode(id)}
+              className={cn("mk-button h-7 rounded-[3px] px-3 text-[10px]", mode === id && "mk-lit-preview")}
+            >
+              {text}
+            </button>
+          ))}
+        </div>
         <span className="mk-label ml-auto text-[8px]">By Konchella</span>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5 fit:flex-row fit:overflow-hidden">
+      {mode === "rundown" && (
+        <main className="flex min-h-0 flex-1 flex-col p-1.5">
+          <GfxRundown say={say} />
+        </main>
+      )}
+
+      <main
+        className={cn(
+          "flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5 fit:flex-row fit:overflow-hidden",
+          mode === "rundown" && "hidden",
+        )}
+      >
         {/* ------------------------------------------------ left: build + preview */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
           <div className="mk-panel flex shrink-0 flex-wrap items-center gap-1 rounded-md p-1.5">
@@ -718,6 +769,228 @@ function GraphicsPage() {
                   <div className="col-span-2">
                     <Range label="Size" value={c.score.size} min={30} max={300} step={5} onChange={(size) => edit("score", { size })} />
                   </div>
+                </>
+              )}
+
+              {active === "social" && (
+                <>
+                  <Row label="Platform text">
+                    <input
+                      className={field}
+                      value={c.social.platform}
+                      maxLength={32}
+                      onChange={(e) => edit("social", { platform: e.target.value })}
+                    />
+                  </Row>
+                  <Row label="Handle">
+                    <input
+                      className={field}
+                      value={c.social.handle}
+                      maxLength={40}
+                      onChange={(e) => edit("social", { handle: e.target.value })}
+                    />
+                  </Row>
+                  <Anim value={c.social.anim} onChange={(anim) => edit("social", { anim })} />
+                  <Row label="Font">
+                    <Pick
+                      value={c.social.font}
+                      list={GFX_FONTS}
+                      onChange={(font) => edit("social", { font })}
+                    />
+                  </Row>
+                  <Row label="Platform block">
+                    <Colour
+                      value={c.social.accent}
+                      onChange={(accent) => edit("social", { accent })}
+                    />
+                  </Row>
+                  <Row label="Handle block">
+                    <Colour value={c.social.bg} onChange={(bg) => edit("social", { bg })} />
+                  </Row>
+                  <Row label="Text colour">
+                    <Colour
+                      value={c.social.textColor}
+                      onChange={(textColor) => edit("social", { textColor })}
+                    />
+                  </Row>
+                  <Range
+                    label="Size"
+                    value={c.social.size}
+                    min={30}
+                    max={300}
+                    step={5}
+                    onChange={(size) => edit("social", { size })}
+                  />
+                </>
+              )}
+
+              {active === "full" && (
+                <>
+                  <div className="col-span-2">
+                    <Row label="Card">
+                      <Pick
+                        value={c.full.kind}
+                        list={FULL_KINDS}
+                        onChange={(kind: FullKind) => edit("full", { kind })}
+                      />
+                    </Row>
+                  </div>
+                  {c.full.kind === "headline" && (
+                    <>
+                      <Row label="Kicker">
+                        <input
+                          className={field}
+                          value={c.full.kicker}
+                          maxLength={60}
+                          onChange={(e) => edit("full", { kicker: e.target.value })}
+                        />
+                      </Row>
+                      <div className="col-span-2">
+                        <Row label="Headline">
+                          <textarea
+                            className="mk-field min-h-[3.5rem] w-full min-w-0 rounded-[3px] px-2 py-1.5 text-xs"
+                            value={c.full.headline}
+                            maxLength={200}
+                            onChange={(e) => edit("full", { headline: e.target.value })}
+                          />
+                        </Row>
+                      </div>
+                      <div className="col-span-2">
+                        <Row label="Body">
+                          <textarea
+                            className="mk-field min-h-[3.5rem] w-full min-w-0 rounded-[3px] px-2 py-1.5 text-xs"
+                            value={c.full.body}
+                            maxLength={400}
+                            onChange={(e) => edit("full", { body: e.target.value })}
+                          />
+                        </Row>
+                      </div>
+                    </>
+                  )}
+                  {c.full.kind === "quote" && (
+                    <>
+                      <div className="col-span-2">
+                        <Row label="Quote">
+                          <textarea
+                            className="mk-field min-h-[3.5rem] w-full min-w-0 rounded-[3px] px-2 py-1.5 text-xs"
+                            value={c.full.quote}
+                            maxLength={300}
+                            onChange={(e) => edit("full", { quote: e.target.value })}
+                          />
+                        </Row>
+                      </div>
+                      <Row label="Author">
+                        <input
+                          className={field}
+                          value={c.full.author}
+                          maxLength={80}
+                          onChange={(e) => edit("full", { author: e.target.value })}
+                        />
+                      </Row>
+                    </>
+                  )}
+                  {(c.full.kind === "standings" ||
+                    c.full.kind === "countdown" ||
+                    c.full.kind === "announcement" ||
+                    c.full.kind === "credits") && (
+                    <Row label="Title">
+                      <input
+                        className={field}
+                        value={c.full.title}
+                        maxLength={80}
+                        onChange={(e) => edit("full", { title: e.target.value })}
+                      />
+                    </Row>
+                  )}
+                  {(c.full.kind === "countdown" || c.full.kind === "announcement") && (
+                    <Row label="Subtitle">
+                      <input
+                        className={field}
+                        value={c.full.subtitle}
+                        maxLength={120}
+                        onChange={(e) => edit("full", { subtitle: e.target.value })}
+                      />
+                    </Row>
+                  )}
+                  {c.full.kind === "countdown" && (
+                    <Row label="Start from (seconds)">
+                      <input
+                        type="number"
+                        min={0}
+                        className={field}
+                        value={c.full.seconds}
+                        onChange={(e) =>
+                          edit("full", { seconds: Math.max(0, Number(e.target.value) || 0) })
+                        }
+                      />
+                    </Row>
+                  )}
+                  {c.full.kind === "standings" && (
+                    <div className="col-span-2">
+                      <Row label="Rows: Team, P, Pts (one per line)">
+                        <textarea
+                          className="mk-field min-h-[5rem] w-full min-w-0 rounded-[3px] px-2 py-1.5 text-xs"
+                          value={c.full.rows}
+                          maxLength={800}
+                          onChange={(e) => edit("full", { rows: e.target.value })}
+                        />
+                      </Row>
+                    </div>
+                  )}
+                  {c.full.kind === "credits" && (
+                    <>
+                      <div className="col-span-2">
+                        <Row label="Role — Name (one per line)">
+                          <textarea
+                            className="mk-field min-h-[5rem] w-full min-w-0 rounded-[3px] px-2 py-1.5 text-xs"
+                            value={c.full.lines}
+                            maxLength={1200}
+                            onChange={(e) => edit("full", { lines: e.target.value })}
+                          />
+                        </Row>
+                      </div>
+                      <Range
+                        label="Roll time"
+                        unit="s"
+                        value={c.full.speed}
+                        min={5}
+                        max={120}
+                        onChange={(speed) => edit("full", { speed })}
+                      />
+                    </>
+                  )}
+                  <Anim value={c.full.anim} onChange={(anim) => edit("full", { anim })} />
+                  <Row label="Font">
+                    <Pick
+                      value={c.full.font}
+                      list={GFX_FONTS}
+                      onChange={(font) => edit("full", { font })}
+                    />
+                  </Row>
+                  <Row label="Primary">
+                    <Colour
+                      value={c.full.primary}
+                      onChange={(primary) => edit("full", { primary })}
+                    />
+                  </Row>
+                  <Row label="Background">
+                    <Colour
+                      value={c.full.secondary}
+                      onChange={(secondary) => edit("full", { secondary })}
+                    />
+                  </Row>
+                  <Row label="Accent">
+                    <Colour
+                      value={c.full.accent}
+                      onChange={(accent) => edit("full", { accent })}
+                    />
+                  </Row>
+                  <Row label="Text colour">
+                    <Colour
+                      value={c.full.textColor}
+                      onChange={(textColor) => edit("full", { textColor })}
+                    />
+                  </Row>
                 </>
               )}
 
