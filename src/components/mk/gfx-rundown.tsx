@@ -1,17 +1,22 @@
-import { Boxes, Layers3, PackagePlus, Search, Sparkles } from "lucide-react";
+import { Boxes, Copy, Download, Layers3, PackagePlus, Pencil, Plus, Save, Search, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { PackageEditor } from "@/components/mk/package-editor";
 import { GFX_LAYERS, layerUrl } from "@/lib/mk/graphics";
+import { isBuiltIn, packageStore, useMyPackages } from "@/lib/mk/gfx-packages";
 import {
   GRAPHIC_PACKAGES,
   TEMPLATES,
   TRANSITIONS,
   getTemplate,
+  itemToSpec,
   makeItem,
+  packageSource,
   packageTheme,
   previewConfig,
   rundown,
   useRundown,
+  type GraphicPackage,
   type RundownItem,
   type Transition,
 } from "@/lib/mk/gfx-rundown";
@@ -150,6 +155,8 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState("All");
   const [dragId, setDragId] = useState<string | null>(null);
+  const mine = useMyPackages();
+  const [editing, setEditing] = useState<{ pack: GraphicPackage; title: string } | null>(null);
 
   const show = rd.shows.find((s) => s.id === rd.showId) ?? rd.shows[0]!;
   const sel = show.items.find((i) => i.id === rd.selId);
@@ -212,15 +219,57 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
   };
   const isSelLive = !!sel && isLive(sel);
 
+  const downloadText = (name: string, ext: string, body: string) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+    a.download = `${name.replace(/[^\w-]+/g, "_") || "package"}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  /** Save rundown rows as a package: updates the one they came from (if it is yours), otherwise makes a new one. */
+  const saveRowsAsPackage = (rows: RundownItem[], fallbackName: string, sourceId?: string) => {
+    if (rows.length === 0) {
+      say("Nothing to save — the rundown is empty");
+      return;
+    }
+    const src = sourceId ? packageStore.get(sourceId) : undefined;
+    if (src) {
+      packageStore.save({ ...src, items: rows.map(itemToSpec), themeId: GFX_THEMES.some((t) => t.id === show.theme.id) ? show.theme.id : src.themeId });
+      say(`Updated "${src.name}" in My packages`);
+      return;
+    }
+    const name = window.prompt("Name this package", fallbackName)?.trim();
+    if (!name) return;
+    packageStore.save({
+      id: `my-${Date.now().toString(36)}`,
+      name,
+      shortName: name.slice(0, 12).toUpperCase(),
+      description: "",
+      themeId: GFX_THEMES.some((t) => t.id === show.theme.id) ? show.theme.id : GFX_THEMES[0]!.id,
+      items: rows.map(itemToSpec),
+    });
+    say(`Saved "${name}" to My packages`);
+  };
+
+  const newPackage = (): GraphicPackage => ({
+    id: `my-${Date.now().toString(36)}`,
+    name: "My package",
+    shortName: "MY PACKAGE",
+    description: "",
+    themeId: show.theme.id,
+    items: [],
+  });
+
   const thumb = (it: RundownItem, th: GfxTheme) => {
     const p = previewConfig(it, th, graphics);
     return p ? <Frame id={p.layer} g={p.g} /> : null;
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto fit:flex-row fit:overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain fit:flex-row fit:overflow-hidden">
       {/* ------------------------------------------------ library */}
-      <aside className="mk-panel flex max-h-[40vh] min-h-0 w-full shrink-0 flex-col gap-1.5 rounded-md p-1.5 fit:max-h-none fit:w-64">
+      <aside className="mk-panel flex max-h-[50dvh] min-h-0 w-full shrink-0 flex-col gap-1.5 rounded-md p-1.5 fit:max-h-none fit:w-52 lg:fit:w-64">
         <div className="mk-label flex items-center gap-1.5 text-foreground">
           <Layers3 className="h-3.5 w-3.5" /> Graphics library
         </div>
@@ -275,53 +324,162 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
           </>
         )}
         <div className="grid min-h-0 flex-1 content-start gap-1.5 overflow-y-auto">
-          {libraryView === "packages"
-            ? GRAPHIC_PACKAGES.map((pack) => {
-                const sample = pack.items.find((i) => i.templateId === "headline") ?? pack.items[0];
-                const th = packageTheme(pack);
-                return (
-                  <article
-                    key={pack.id}
-                    className="overflow-hidden rounded-[3px] border border-white/10 bg-black/25"
-                  >
-                    {sample && (
-                      <div className={cn("relative aspect-video w-full", CHECKER)}>
-                        {thumb(
-                          makeItem(sample.templateId, `p-${pack.id}`, sample.data, sample.name),
-                          th,
-                        )}
-                      </div>
-                    )}
-                    <div className="grid gap-1.5 p-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="text-sm font-bold uppercase tracking-wider">
-                            {pack.name}
+          {libraryView === "packages" ? (
+            <>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setEditing({ pack: newPackage(), title: "New package" })}
+                  className="mk-button flex h-8 items-center justify-center gap-1 rounded-[3px] text-[10px]"
+                >
+                  <Plus className="h-3 w-3" /> New package
+                </button>
+                <label className="mk-button flex h-8 cursor-pointer items-center justify-center gap-1 rounded-[3px] text-[10px]">
+                  <Upload className="h-3 w-3" /> Import
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="sr-only"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      try {
+                        const made = packageStore.importJson(await file.text());
+                        say(`Imported ${made.length} package${made.length === 1 ? "" : "s"}`);
+                      } catch (err) {
+                        say(err instanceof Error ? err.message : "Could not read that file");
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+              {[
+                { head: `My packages (${mine.length})`, list: mine as GraphicPackage[] },
+                { head: "Built-in (fixed — Customise makes your own copy)", list: GRAPHIC_PACKAGES },
+              ].map((group) => (
+                <div key={group.head} className="grid gap-1.5">
+                  <div className="mk-label text-[9px]">{group.head}</div>
+                  {group.list.length === 0 && (
+                    <p className="font-mono text-[10px] leading-snug text-muted-foreground">
+                      None yet. Press New package, or build a rundown and use Save as package.
+                    </p>
+                  )}
+                  {group.list.map((pack) => {
+                    const mineOne = !isBuiltIn(pack.id);
+                    const sample = pack.items.find((i) => i.templateId === "headline") ?? pack.items[0];
+                    const th = packageTheme(pack);
+                    return (
+                      <article key={pack.id} className="overflow-hidden rounded-[3px] border border-white/10 bg-black/25">
+                        {sample && (
+                          <div className={cn("relative aspect-video w-full", CHECKER)}>
+                            {thumb(makeItem(sample.templateId, `p-${pack.id}`, sample.data, sample.name), th)}
                           </div>
-                          <div className="font-mono text-[9px] text-amber">
-                            {pack.items.length} COORDINATED GRAPHICS
+                        )}
+                        <div className="grid gap-1.5 p-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="break-words text-sm font-bold uppercase tracking-wider">{pack.name}</div>
+                              <div className="font-mono text-[9px] text-amber">
+                                {pack.items.length} GRAPHIC{pack.items.length === 1 ? "" : "S"}
+                              </div>
+                            </div>
+                            <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber" />
+                          </div>
+                          {pack.description && (
+                            <p className="text-[11px] leading-snug text-muted-foreground">{pack.description}</p>
+                          )}
+                          <details className="text-[11px]">
+                            <summary className="cursor-pointer font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                              What is inside
+                            </summary>
+                            <ol className="mt-1 grid gap-0.5 pl-4 normal-case">
+                              {pack.items.map((i, n) => (
+                                <li key={n} className="list-decimal break-words">
+                                  {i.name}
+                                </li>
+                              ))}
+                            </ol>
+                          </details>
+                          <button
+                            type="button"
+                            disabled={pack.items.length === 0}
+                            onClick={() => {
+                              rundown.addPackage(pack);
+                              say(`${pack.name} added to the rundown`);
+                            }}
+                            className="mk-button mk-lit-amber flex h-8 items-center justify-center gap-1.5 rounded-[3px] text-[11px] disabled:opacity-40"
+                          >
+                            <PackagePlus className="h-3.5 w-3.5" /> Add full package
+                          </button>
+                          <div className="flex gap-1">
+                            {mineOne ? (
+                              <button
+                                type="button"
+                                onClick={() => setEditing({ pack, title: `Edit — ${pack.name}` })}
+                                className="mk-button flex h-7 flex-1 items-center justify-center gap-1 rounded-[3px] text-[10px]"
+                              >
+                                <Pencil className="h-3 w-3" /> Edit
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const copy = packageStore.duplicate(pack);
+                                  setEditing({ pack: copy, title: `Edit — ${copy.name}` });
+                                  say("Your own copy was made — the built-in one stays as it is");
+                                }}
+                                className="mk-button flex h-7 flex-1 items-center justify-center gap-1 rounded-[3px] text-[10px]"
+                              >
+                                <Pencil className="h-3 w-3" /> Customise
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              aria-label={`Duplicate ${pack.name}`}
+                              title="Duplicate"
+                              onClick={() => {
+                                packageStore.duplicate(pack);
+                                say(`Copied ${pack.name} to My packages`);
+                              }}
+                              className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Download ${pack.name}`}
+                              title="Download to share"
+                              onClick={() => downloadText(pack.name, "mkpack.json", packageStore.exportJson([pack]))}
+                              className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]"
+                            >
+                              <Download className="h-3 w-3" />
+                            </button>
+                            {mineOne && (
+                              <button
+                                type="button"
+                                aria-label={`Delete ${pack.name}`}
+                                title="Delete"
+                                onClick={() => {
+                                  if (window.confirm(`Delete package "${pack.name}"? Rundowns already using it keep their items.`)) {
+                                    packageStore.remove(pack.id);
+                                  }
+                                }}
+                                className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
-                        <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber" />
-                      </div>
-                      <p className="text-[11px] leading-snug text-muted-foreground">
-                        {pack.description}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          rundown.addPackage(pack.id);
-                          say(`${pack.name} package added to the rundown`);
-                        }}
-                        className="mk-button mk-lit-amber flex h-8 items-center justify-center gap-1.5 rounded-[3px] text-[11px]"
-                      >
-                        <PackagePlus className="h-3.5 w-3.5" /> Add full package
-                      </button>
-                    </div>
-                  </article>
-                );
-              })
-            : tplList.map((t) => (
+                      </article>
+                    );
+                  })}
+                </div>
+              ))}
+            </>
+          ) : (
+            tplList.map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -339,15 +497,16 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
                     </span>
                   </div>
                 </button>
-              ))}
+              ))
+          )}
         </div>
       </aside>
 
       {/* ------------------------------------------------ monitors + rundown */}
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
+      <section className="@container flex min-w-0 shrink-0 flex-col gap-1.5 fit:min-h-0 fit:flex-1 fit:shrink fit:overflow-y-auto">
         <div className="mk-panel flex shrink-0 flex-wrap items-center gap-1 rounded-md p-1.5">
           <select
-            className={cn(field, "w-auto max-w-[14rem]")}
+            className={cn(field, "w-auto max-w-[min(14rem,100%)]")}
             value={show.id}
             onChange={(e) => rundown.setShow(e.target.value)}
             aria-label="Rundown"
@@ -375,6 +534,7 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
                 },
               ],
               ["Duplicate", () => rundown.duplicateShow()],
+              ["Save as package", () => saveRowsAsPackage(show.items, `${show.name} package`)],
               [
                 "Export",
                 () => {
@@ -433,7 +593,7 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
           </span>
         </div>
 
-        <div className="grid shrink-0 grid-cols-1 gap-1.5 sm:grid-cols-2">
+        <div className="grid shrink-0 grid-cols-1 gap-1.5 @sm:grid-cols-2">
           <Monitor label="PREVIEW" tone="cue" guides={guides}>
             {pv && <Frame id={pv.layer} g={pv.g} />}
           </Monitor>
@@ -471,17 +631,20 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
           </button>
         </div>
 
-        <div className="mk-panel flex min-h-[10rem] flex-1 flex-col overflow-hidden rounded-md">
+        <div className="mk-panel flex h-[22rem] shrink-0 flex-col overflow-hidden rounded-md fit:h-auto fit:min-h-[12rem] fit:flex-1">
           <div className="mk-label flex shrink-0 items-center justify-between border-b border-white/10 px-2 py-1.5 text-foreground">
             <span>Rundown — {show.items.length} items</span>
             <span className="font-mono text-[9px] normal-case tracking-normal text-muted-foreground">
-              drag to reorder · ↑↓ select · double-click = take
+              drag or ▲▼ to reorder · ↑↓ select · double-click = take
             </span>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {show.items.length === 0 && (
-              <div className="p-6 text-center text-xs text-muted-foreground">
-                Add a package or a single graphic from the library to start your rundown.
+              <div className="grid gap-1 p-6 text-center text-xs text-muted-foreground">
+                <b className="text-foreground">How this works</b>
+                <span>1. Add a package or a single graphic from the library on the left.</span>
+                <span>2. Click a row, then change its words and timing under Properties.</span>
+                <span>3. Press TAKE (Space) to put it on air. UPDATE (U) pushes edits while it is live. CLEAR (Esc) takes it off.</span>
               </div>
             )}
             {show.items.map((it, idx) => {
@@ -492,8 +655,22 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
                 <div key={it.id}>
                   {begins && (
                     <div className="flex items-center gap-2 border-b border-white/10 bg-amber/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-amber">
-                      <Boxes className="h-3 w-3" />
-                      {it.packageName}
+                      <Boxes className="h-3 w-3 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">{it.packageName}</span>
+                      <button
+                        type="button"
+                        title="Save this group back to My packages"
+                        onClick={() =>
+                          saveRowsAsPackage(
+                            show.items.filter((x) => x.packageId === it.packageId),
+                            it.packageName ?? "My package",
+                            packageSource(it.packageId),
+                          )
+                        }
+                        className="mk-button flex h-6 shrink-0 items-center gap-1 rounded-[3px] px-2 text-[9px] normal-case tracking-normal text-foreground"
+                      >
+                        <Save className="h-3 w-3" /> Save to library
+                      </button>
                     </div>
                   )}
                   <div
@@ -516,7 +693,7 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
                       {idx + 1}
                     </span>
                     <span className="flex-1 truncate normal-case">{it.name}</span>
-                    <span className="w-16 font-mono text-[10px] uppercase text-muted-foreground">
+                    <span className="hidden w-16 font-mono text-[10px] uppercase text-muted-foreground @sm:inline">
                       {tpl?.layer}
                     </span>
                     <span className="w-12 font-mono text-[10px] text-muted-foreground">
@@ -527,13 +704,35 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
                         LIVE
                       </span>
                     )}
+                    {(
+                      [
+                        ["Move up", "▲", -1, idx === 0],
+                        ["Move down", "▼", 1, idx === show.items.length - 1],
+                      ] as [string, string, number, boolean][]
+                    ).map(([label, glyph, d, off]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        aria-label={`${label}: ${it.name}`}
+                        title={label}
+                        disabled={off}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const other = show.items[idx + d];
+                          if (other) rundown.reorder(it.id, other.id);
+                        }}
+                        className="px-1 text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-20"
+                      >
+                        {glyph}
+                      </button>
+                    ))}
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         rundown.duplicate(it.id);
                       }}
-                      className="text-[10px] text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+                      className="px-1 text-[10px] text-muted-foreground hover:text-foreground focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
                     >
                       Duplicate
                     </button>
@@ -543,7 +742,7 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
                         e.stopPropagation();
                         if (window.confirm(`Delete "${it.name}"?`)) rundown.remove(it.id);
                       }}
-                      className="text-[10px] text-red-400 opacity-0 group-hover:opacity-100"
+                      className="px-1 text-[10px] text-red-400 focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
                     >
                       Delete
                     </button>
@@ -556,7 +755,7 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
       </section>
 
       {/* ------------------------------------------------ properties */}
-      <aside className="mk-panel flex max-h-[60vh] min-h-0 w-full shrink-0 flex-col gap-3 overflow-y-auto rounded-md p-2 fit:max-h-none fit:w-72">
+      <aside className="mk-panel flex min-h-0 w-full shrink-0 flex-col gap-3 overflow-y-auto rounded-md p-2 fit:max-h-none fit:w-60 lg:fit:w-72">
         <div className="grid gap-2">
           <h2 className="mk-label text-foreground">Properties</h2>
           {sel && selTpl ? (
@@ -737,6 +936,19 @@ export function GfxRundown({ say }: { say: (msg: string) => void }) {
           </div>
         </div>
       </aside>
+
+      {editing && (
+        <PackageEditor
+          pack={editing.pack}
+          title={editing.title}
+          onClose={() => setEditing(null)}
+          onSave={(next) => {
+            const saved = packageStore.save(next);
+            setEditing(null);
+            say(`Saved "${saved.name}" — ${saved.items.length} graphic${saved.items.length === 1 ? "" : "s"}`);
+          }}
+        />
+      )}
     </div>
   );
 }
