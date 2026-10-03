@@ -51,6 +51,7 @@ const notices: string[] = [];
 
 beforeAll(async () => {
   ({ engine } = await import("../src/lib/mk/engine"));
+  engine.boot();
   engine.subscribe(() => {
     const n = engine.getSnapshot().notice;
     const text = typeof n === "string" ? n : n?.text;
