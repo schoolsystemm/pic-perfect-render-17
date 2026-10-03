@@ -32,6 +32,7 @@ export function applyTheme(g: GraphicsConfig, t: GfxTheme): GraphicsConfig {
     ticker: { ...g.ticker, style: "news", accent: t.accent, bg: t.secondary, bgOpacity: 96, textColor: t.text, font: t.font },
     clock: { ...g.clock, style: "split", label: g.clock.label || "EAT", accent: t.accent, bg: t.secondary, bgOpacity: 100, textColor: t.text, font: t.font },
     badge: { ...g.badge, style: "location", color: LIVE_RED, locBg: t.secondary, textColor: "#ffffff", font: t.font },
+    news: { ...g.news, primary: t.primary, accent: t.accent, bg: t.secondary, textColor: t.text, font: t.font },
     breaking: { ...g.breaking, accent: LIVE_RED, font: t.font },
     score: { ...g.score, primary: t.primary, accent: t.accent, bg: t.secondary, textColor: t.text, font: t.font },
     social: { ...g.social, accent: t.accent, bg: t.secondary, textColor: t.text, font: t.font },

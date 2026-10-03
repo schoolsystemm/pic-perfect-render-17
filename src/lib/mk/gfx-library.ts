@@ -161,6 +161,33 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
         font: oneOf(r["font"], GFX_FONTS, d.font),
       } as LayerData<K>;
     }
+    case "news": {
+      const d = D.news;
+      const tags = Array.isArray(r["tags"])
+        ? (r["tags"] as unknown[])
+            .slice(0, 20)
+            .map((t) => ({
+              main: str((t as Record<string, unknown>)?.["main"], "", 160),
+              below: str((t as Record<string, unknown>)?.["below"], "", 200),
+            }))
+            .filter((t) => t.main.trim() || t.below.trim())
+        : d.tags;
+      return {
+        kicker: str(r["kicker"], d.kicker, 40),
+        tags,
+        seconds: num(r["seconds"], d.seconds, 2, 120),
+        loop: bool(r["loop"], d.loop),
+        start: num(r["start"], d.start, 0, 19),
+        run: num(r["run"], d.run, 0, 1e9),
+        primary: hex(r["primary"], d.primary),
+        accent: hex(r["accent"], d.accent),
+        bg: hex(r["bg"], d.bg),
+        textColor: hex(r["textColor"], d.textColor),
+        size: num(r["size"], d.size, 30, 300),
+        font: oneOf(r["font"], GFX_FONTS, d.font),
+        anim: oneOf(r["anim"], GFX_ANIMS, d.anim),
+      } as LayerData<K>;
+    }
     case "breaking": {
       const d = D.breaking;
       return {

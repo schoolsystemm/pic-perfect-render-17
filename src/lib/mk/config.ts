@@ -52,6 +52,7 @@ interface LooseGraphics {
   ticker?: Partial<GraphicsConfig["ticker"]>;
   clock?: Partial<GraphicsConfig["clock"]>;
   badge?: Partial<GraphicsConfig["badge"]>;
+  news?: Partial<GraphicsConfig["news"]>;
   breaking?: Partial<GraphicsConfig["breaking"]>;
   score?: Partial<GraphicsConfig["score"]>;
   social?: Partial<GraphicsConfig["social"]>;
@@ -119,6 +120,11 @@ function mergeGraphics(raw: unknown): GraphicsConfig {
     },
     clock: { ...D.clock, ...(r.clock ?? {}) },
     badge: { ...D.badge, ...(r.badge ?? {}) },
+    news: {
+      ...D.news,
+      ...(r.news ?? {}),
+      tags: Array.isArray(r.news?.tags) ? r.news.tags : D.news.tags,
+    },
     breaking: { ...D.breaking, ...(r.breaking ?? {}) },
     score: { ...D.score, ...(r.score ?? {}) },
     social: { ...D.social, ...(r.social ?? {}) },

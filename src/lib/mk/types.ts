@@ -27,13 +27,14 @@ export interface DskTarget {
 
 export type Corner = "tl" | "tr" | "bl" | "br";
 export type GfxId =
-  "logo" | "lower" | "ticker" | "clock" | "badge" | "breaking" | "score" | "social" | "full";
+  "logo" | "lower" | "ticker" | "clock" | "badge" | "news" | "breaking" | "score" | "social" | "full";
 export const GFX_IDS: GfxId[] = [
   "logo",
   "lower",
   "ticker",
   "clock",
   "badge",
+  "news",
   "breaking",
   "score",
   "social",
@@ -127,6 +128,12 @@ export const DEFAULT_SCROLLS: ScrollPreset[] = [
   { name: "Sponsors", label: "THANKS", text: "This broadcast is brought to you by our sponsors and partners", speed: 26, direction: "left", loop: true },
 ];
 
+/** One changing tag of a news story: the big main tag and the smaller tag below it. */
+export interface NewsTag {
+  main: string;
+  below: string;
+}
+
 export interface GraphicsConfig {
   logo: {
     image: string | null;
@@ -212,6 +219,31 @@ export interface GraphicsConfig {
     anim: GfxAnim;
     textColor: string;
     font: GfxFont;
+  };
+  /** News tags: an "updates" tag over a main tag over a below tag. Cycles the story's tags by itself. */
+  news: {
+    /** Small "updates" tag above the main tag (LIVE UPDATES, POLITICS…). Empty = hidden. */
+    kicker: string;
+    /** The changing tags of one story. Each one is a main tag + a below tag. */
+    tags: NewsTag[];
+    /** Seconds each tag stays up before the next one comes in. */
+    seconds: number;
+    /** true = keeps going round the tags, false = plays once and holds the last tag. */
+    loop: boolean;
+    /** Tag to start on (0 = the first). */
+    start: number;
+    /** Bumped by the News Desk to restart the cycle (a changed number makes OBS reload the page). */
+    run: number;
+    /** Main tag block colour. */
+    primary: string;
+    /** Updates tag + accent line colour. */
+    accent: string;
+    /** Below tag strip colour. */
+    bg: string;
+    textColor: string;
+    size: number;
+    font: GfxFont;
+    anim: GfxAnim;
   };
   /** Full-width breaking-news banner. */
   breaking: {
@@ -323,6 +355,24 @@ export const DEFAULT_GRAPHICS: GraphicsConfig = {
   },
   clock: { label: "", accent: "#f5b700", style: "solid", anim: "fade", pos: "br", at: null, seconds: true, h24: true, size: 100, bg: "#0a0c10", bgOpacity: 88, textColor: "#ffffff", font: "mono" },
   badge: { text: "LIVE", location: "", locBg: "#0a1628", pos: "tl", at: null, color: "#e5322d", size: 100, style: "solid", anim: "fade", textColor: "#ffffff", font: "sans" },
+  news: {
+    kicker: "LIVE UPDATES",
+    tags: [
+      { main: "Main tag goes here", below: "Below tag goes here" },
+      { main: "Second main tag", below: "Second below tag" },
+    ],
+    seconds: 6,
+    loop: true,
+    start: 0,
+    run: 0,
+    primary: "#0b4fa8",
+    accent: "#f5b700",
+    bg: "#0a1628",
+    textColor: "#ffffff",
+    size: 100,
+    font: "condensed",
+    anim: "slide",
+  },
   breaking: {
     label: "BREAKING NEWS",
     headline: "Parliament passes new climate bill after overnight session",
@@ -389,6 +439,7 @@ export const IDLE_GFX: Record<GfxId, boolean> = {
   ticker: false,
   clock: false,
   badge: false,
+  news: false,
   breaking: false,
   score: false,
   social: false,

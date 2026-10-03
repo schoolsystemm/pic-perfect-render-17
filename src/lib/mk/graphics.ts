@@ -12,6 +12,7 @@ export const GFX_LAYERS: { id: GfxId; name: string; label: string }[] = [
   { id: "ticker", name: "MK Ticker", label: "Ticker" },
   { id: "clock", name: "MK Clock", label: "Clock" },
   { id: "badge", name: "MK Badge", label: "Live Badge" },
+  { id: "news", name: "MK News Tags", label: "News Tags" },
   // Newer layers go last: later = higher in the OBS scene, so Breaking sits on top of everything.
   { id: "social", name: "MK Social", label: "Social" },
   { id: "score", name: "MK Scoreboard", label: "Scoreboard" },
@@ -326,6 +327,51 @@ function badge(g: GraphicsConfig) {
   );
 }
 
+/**
+ * News tags: [updates tag] over [main tag] over [below tag]. The page cycles the story's tags by itself
+ * (fixed seconds each), so one press of PLAY runs the whole story; the next story is one more press.
+ */
+function news(g: GraphicsConfig) {
+  const N = g.news;
+  const tags = (Array.isArray(N.tags) ? N.tags : [])
+    .slice(0, 20)
+    .map((t) => ({ main: String(t?.main ?? "").slice(0, 160), below: String(t?.below ?? "").slice(0, 200) }))
+    .filter((t) => t.main.trim() || t.below.trim());
+  const kicker = (N.kicker ?? "").trim();
+  if (!tags.length && !kicker) return page("", "");
+  const prim = color(N.primary, "#0b4fa8");
+  const acc = color(N.accent, "#f5b700");
+  const dark = color(N.bg, "#0a1628");
+  const txt = color(N.textColor, "#ffffff");
+  const ms = Math.round(num(N.seconds, 6, 2, 120) * 1000);
+  const start = Math.max(0, Math.min(Math.max(0, tags.length - 1), Math.round(num(N.start, 0, 0, 19))));
+  const hasBelow = tags.some((t) => t.below.trim());
+  const json = JSON.stringify(tags).replace(/</g, "\\u003c");
+  return page(
+    `.sc{position:absolute;left:3vw;bottom:9.5vh;transform:scale(${scale(N.size)});transform-origin:bottom left}${enter(N.anim, "l", msOf(N))}
+.st{display:inline-flex;flex-direction:column;align-items:flex-start;max-width:74vw;font-family:${font(N.font)}}
+.kk{background:${acc};color:${contrast(acc)};font-size:1.4vw;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:.25vw 1.2vw;margin-left:.73vw;white-space:nowrap}
+.mn{display:flex;box-shadow:0 .5vw 1.6vw rgba(0,0,0,.35)}
+.ab{width:.73vw;background:${acc};flex:none}
+.mt{background:${prim};color:${readable(N.textColor, prim)};min-width:26vw;height:7vw;box-sizing:border-box;padding:0 2.1vw;display:flex;align-items:center;overflow:hidden}
+.mt div{font-size:3vw;font-weight:800;line-height:1.08;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bl{margin-left:.73vw;background:${rgba(dark, 96)};color:${readable(N.textColor, dark)};min-width:20vw;height:3.2vw;box-sizing:border-box;padding:0 2.1vw;display:flex;align-items:center;overflow:hidden;max-width:calc(74vw - .73vw)}
+.bl div{font-size:1.7vw;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.o{animation:so .28s ease-in both}.i{animation:si .5s cubic-bezier(.2,.8,.2,1) both}
+@keyframes so{to{opacity:0;transform:translateY(-35%)}}@keyframes si{from{opacity:0;transform:translateY(45%)}to{opacity:1;transform:none}}`,
+    `<div class="sc"><div class="an"><div class="st">${kicker ? `<div class="kk">${esc(kicker)}</div>` : ""}${tags.length ? `<div class="mn"><div class="ab"></div><div class="mt"><div id="m"></div></div></div>${hasBelow ? `<div class="bl"><div id="b"></div></div>` : ""}` : ""}</div></div></div><!--${Math.round(num(N.run, 0, 0, 1e9))}-->`,
+    tags.length
+      ? `var T=${json},MS=${ms},LOOP=${N.loop === false ? "false" : "true"},i=${start};
+var m=document.getElementById('m'),b=document.getElementById('b'),bl=b&&b.parentNode;
+function put(n){var t=T[n];m.textContent=t.main;if(b){b.textContent=t.below;bl.style.visibility=t.below.trim()?'visible':'hidden'}}
+function fx(c){m.className=c;if(b)b.className=c;if(b&&c==='i')b.style.animationDelay='.09s';else if(b)b.style.animationDelay='0s'}
+function go(n){fx('o');setTimeout(function(){i=n;put(i);fx('i');wait()},280)}
+function wait(){if(T.length<2)return;if(i>=T.length-1&&!LOOP)return;setTimeout(function(){go(i>=T.length-1?0:i+1)},MS)}
+put(i);fx('i');wait();`
+      : "",
+  );
+}
+
 function breaking(g: GraphicsConfig) {
   const B = g.breaking;
   const k = scale(B.size);
@@ -479,6 +525,8 @@ export function layerUrl(id: GfxId, g: GraphicsConfig): string {
       return clock(g);
     case "badge":
       return badge(g);
+    case "news":
+      return news(g);
     case "breaking":
       return breaking(g);
     case "score":
