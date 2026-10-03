@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DesignLibrary } from "@/components/mk/design-library";
 import { GfxRundown } from "@/components/mk/gfx-rundown";
+import { NewsDesk } from "@/components/mk/news-desk";
 import { LiveSetup } from "@/components/mk/live-setup";
 import { PlacePicker } from "@/components/mk/place-picker";
 import { fileToLogo, GFX_LAYERS, GFX_SCENE, layerUrl } from "@/lib/mk/graphics";
@@ -204,7 +205,7 @@ function GraphicsPage() {
   const library = useGfxLibrary();
   const [draft, setDraft] = useState<GraphicsConfig>(state.config.graphics);
   const [scene, setScene] = useState(state.config.graphicsScene);
-  const [mode, setMode] = useState<"design" | "rundown" | "live">("design");
+  const [mode, setMode] = useState<"design" | "rundown" | "news" | "live">("design");
   const [active, setActive] = useState<GfxId>("lower");
   const [backdrop, setBackdrop] = useState<Backdrop>("video");
   const [loadedId, setLoadedId] = useState<string | null>(null);
@@ -285,6 +286,7 @@ function GraphicsPage() {
             [
               ["design", "Design"],
               ["rundown", "Rundown"],
+              ["news", "News Desk"],
               ["live", "Live FX & Tags"],
             ] as const
           ).map(([id, text]) => (
@@ -306,6 +308,12 @@ function GraphicsPage() {
       {mode === "rundown" && (
         <main className="flex min-h-0 flex-1 flex-col p-1.5">
           <GfxRundown say={say} />
+        </main>
+      )}
+
+      {mode === "news" && (
+        <main className="flex min-h-0 flex-1 flex-col p-1.5">
+          <NewsDesk say={say} />
         </main>
       )}
 
@@ -663,6 +671,61 @@ function GraphicsPage() {
                   </Row>
                   <div className="col-span-2">
                     <Range label="Size" value={c.badge.size} min={30} max={300} step={5} onChange={(size) => edit("badge", { size })} />
+                  </div>
+                </>
+              )}
+
+              {active === "news" && (
+                <>
+                  <Row label="Updates tag">
+                    <input className={field} value={c.news.kicker} maxLength={40} onChange={(e) => edit("news", { kicker: e.target.value })} />
+                  </Row>
+                  <Row label={`Seconds per tag ${c.news.seconds}`}>
+                    <input type="range" className="mk-range h-8" min={2} max={30} step={1} value={c.news.seconds} onChange={(e) => edit("news", { seconds: Number(e.target.value) })} />
+                  </Row>
+                  <div className="col-span-2 grid gap-1">
+                    <span className="mk-label text-[9px]">Tags (main tag | below tag, one per line)</span>
+                    <textarea
+                      className="mk-field min-h-[5.5rem] w-full min-w-0 rounded-[3px] px-2 py-1.5 font-mono text-xs"
+                      defaultValue={c.news.tags.map((t) => (t.below ? `${t.main} | ${t.below}` : t.main)).join("\n")}
+                      key={loadedId ?? "news"}
+                      onBlur={(e) =>
+                        edit("news", {
+                          tags: e.target.value
+                            .split("\n")
+                            .map((l) => l.trim())
+                            .filter(Boolean)
+                            .slice(0, 20)
+                            .map((l) => {
+                              const [main = "", ...rest] = l.split("|");
+                              return { main: main.trim().slice(0, 160), below: rest.join("|").trim().slice(0, 200) };
+                            }),
+                        })
+                      }
+                    />
+                    <span className="font-mono text-[9px] text-engrave">For real bulletins use the News Desk tab — it holds every story and tag.</span>
+                  </div>
+                  <Anim value={c.news.anim} onChange={(anim) => edit("news", { anim })} />
+                  <Row label="Font">
+                    <Pick value={c.news.font} list={GFX_FONTS} onChange={(font) => edit("news", { font })} />
+                  </Row>
+                  <Row label="Main tag block">
+                    <Colour value={c.news.primary} onChange={(primary) => edit("news", { primary })} />
+                  </Row>
+                  <Row label="Updates tag + line">
+                    <Colour value={c.news.accent} onChange={(accent) => edit("news", { accent })} />
+                  </Row>
+                  <Row label="Below tag strip">
+                    <Colour value={c.news.bg} onChange={(bg) => edit("news", { bg })} />
+                  </Row>
+                  <Row label="Text colour">
+                    <Colour value={c.news.textColor} onChange={(textColor) => edit("news", { textColor })} />
+                  </Row>
+                  <div className="col-span-2">
+                    <Range label="Size" value={c.news.size} min={30} max={300} step={5} onChange={(size) => edit("news", { size })} />
+                  </div>
+                  <div className="col-span-2">
+                    <Toggle label={c.news.loop ? "KEEPS GOING ROUND" : "HOLDS THE LAST TAG"} checked={c.news.loop} onChange={(loop) => edit("news", { loop })} />
                   </div>
                 </>
               )}
