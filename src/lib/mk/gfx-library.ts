@@ -169,6 +169,7 @@ export function sanitizeLayer<K extends GfxId>(layer: K, raw: unknown): LayerDat
             .map((t) => ({
               main: str((t as Record<string, unknown>)?.["main"], "", 160),
               below: str((t as Record<string, unknown>)?.["below"], "", 200),
+              full: (t as Record<string, unknown>)?.["full"] === true,
             }))
             .filter((t) => t.main.trim() || t.below.trim())
         : d.tags;
