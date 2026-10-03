@@ -69,7 +69,7 @@ export function makeBulletin(name = "New bulletin"): NewsBulletin {
     themeId: GFX_THEMES[0]!.id,
     logoText: "NEWS",
     clockLabel: "EAT",
-    scrollLabel: "LATEST",
+    scrollLabel: "LIVE",
     scrollLines: "Headline one goes here\nHeadline two goes here\nHeadline three goes here",
     scrollSpeed: 45,
     tagSeconds: 6,
