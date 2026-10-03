@@ -136,6 +136,89 @@ function Monitor({
   );
 }
 
+/** One small camera monitor on the wall: slow thumbnail, tally colour, tap = preview, PGM = program. */
+function CamThumb({
+  cam,
+  scene,
+  live,
+  getThumb,
+  isProgram,
+  isPreview,
+  onPreview,
+  onProgram,
+}: {
+  cam: CamIndex;
+  scene: string | null;
+  live: boolean;
+  getThumb?: (scene: string) => Promise<string | null>;
+  isProgram: boolean;
+  isPreview: boolean;
+  onPreview?: (cam: CamIndex) => void;
+  onProgram?: (cam: CamIndex) => void;
+}) {
+  const [thumb, setThumb] = useState<string | null>(null);
+  useEffect(() => {
+    if (!live || !scene || !getThumb) {
+      setThumb(null);
+      return;
+    }
+    let stopped = false;
+    const tick = async () => {
+      const src = await getThumb(scene).catch(() => null);
+      if (!stopped && src) setThumb(src);
+    };
+    void tick();
+    const timer = setInterval(() => void tick(), 1000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [live, scene, getThumb]);
+
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 flex-col overflow-hidden rounded-[3px] border-2 bg-bezel",
+        isProgram ? "border-program" : isPreview ? "border-preview" : "border-border",
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => onPreview?.(cam)}
+        title={`${camLabel(cam)} — tap for preview`}
+        className="relative aspect-video w-full overflow-hidden bg-black"
+      >
+        {thumb ? (
+          <img src={thumb} alt={camLabel(cam)} draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+        ) : (
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 p-1 text-center">
+            <span className="text-sm font-bold tracking-[0.15em] text-foreground">{camLabel(cam)}</span>
+            <span className="mk-label max-w-full truncate text-[8px]">{scene ?? "No scene"}</span>
+          </span>
+        )}
+      </button>
+      <div className="flex items-stretch text-[8px] font-bold tracking-[0.2em]">
+        <span
+          className={cn(
+            "flex-1 py-[2px] text-center",
+            isProgram ? "bg-program text-destructive-foreground" : isPreview ? "bg-preview text-primary-foreground" : "bg-panel text-muted-foreground",
+          )}
+        >
+          {camLabel(cam)}
+        </span>
+        <button
+          type="button"
+          onClick={() => onProgram?.(cam)}
+          title={`Take ${camLabel(cam)} to program`}
+          className="mk-button px-1.5 font-mono text-[8px]"
+        >
+          PGM
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Multiview(props: MultiviewProps) {
   const now = useClock(33);
   const live = props.liveVideo && props.connected;
