@@ -51,7 +51,7 @@ export interface NewsBulletin {
 
 // ------------------------------------------------------------------ makers
 
-export const makeTag = (main = "", below = ""): NewsTag => ({ main, below });
+export const makeTag = (main = "", below = "", full = false): NewsTag => ({ main, below, full });
 
 export const makeStory = (name = "New story"): NewsStory => ({
   id: uid(),
@@ -82,7 +82,7 @@ function seedBulletins(): NewsBulletin[] {
     id: uid(),
     name,
     kicker,
-    tags: tags.map(([m, b]) => makeTag(m, b)),
+    tags: tags.map(([m, b]) => makeTag(m, b, !b)),
     seconds: 0,
     loop: true,
   });
@@ -93,7 +93,7 @@ function seedBulletins(): NewsBulletin[] {
       ["City unveils 10-year transport plan", "Rapid bus corridors and commuter rail upgrades"],
       ["Five counties to be connected by 2036", "Construction starts next year"],
       ["Commuters welcome the plan", "Concerns remain over fares"],
-      ["Governor to address residents today", "Statement expected at noon"],
+      ["Governor to address residents today", ""],
     ]),
     story("Weather", "WEATHER", [
       ["Heavy rain expected in the west", "Flood warning in low-lying areas"],
@@ -126,7 +126,7 @@ function cleanStory(raw: unknown): NewsStory | null {
     .slice(0, MAX_TAGS)
     .map((t) => {
       const o = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
-      return makeTag(text(o["main"], "", 160), text(o["below"], "", 200));
+      return makeTag(text(o["main"], "", 160), text(o["below"], "", 200), o["full"] === true);
     });
   return {
     id: text(r["id"], "", 40) || uid(),
