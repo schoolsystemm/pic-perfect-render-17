@@ -293,7 +293,7 @@ export function TagsSettings() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-4 items-end gap-2">
+          <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-4">
             {[
               { key: "accent" as const, label: "Accent" },
               { key: "bg" as const, label: "Back" },
