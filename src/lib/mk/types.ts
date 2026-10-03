@@ -661,6 +661,10 @@ export interface StreamStats {
   droppedFrames: number;
   /** OBS CPU load, percent. */
   cpu: number;
+  /** Rendered frames per second. */
+  fps: number;
+  /** Frames skipped because of rendering lag. */
+  skippedRender: number;
 }
 
 export const FADER_MIN = -60;
