@@ -159,7 +159,7 @@ export function NewsDesk({ say }: { say: (msg: string) => void }) {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
-  const setTag = (s: NewsStory, i: number, patch: Partial<{ main: string; below: string }>) =>
+  const setTag = (s: NewsStory, i: number, patch: Partial<{ main: string; below: string; full: boolean }>) =>
     newsDesk.setTags(
       s.id,
       s.tags.map((t, n) => (n === i ? { ...t, ...patch } : t)),
@@ -180,7 +180,8 @@ export function NewsDesk({ say }: { say: (msg: string) => void }) {
       .filter(Boolean)
       .map((l) => {
         const [main = "", ...rest] = l.split("|");
-        return makeTag(main.trim().slice(0, 160), rest.join("|").trim().slice(0, 200));
+        const below = rest.join("|").trim().slice(0, 200);
+        return makeTag(main.trim().slice(0, 160), below, !below);
       });
     if (!tags.length) return;
     newsDesk.setTags(story.id, tags);
@@ -550,7 +551,7 @@ export function NewsDesk({ say }: { say: (msg: string) => void }) {
                       : {
                           id: story.id,
                           text: story.tags
-                            .map((t) => (t.below ? `${t.main} | ${t.below}` : t.main))
+                            .map((t) => (t.full || !t.below ? t.main : `${t.main} | ${t.below}`))
                             .join("\n"),
                         },
                   )
@@ -573,12 +574,12 @@ export function NewsDesk({ say }: { say: (msg: string) => void }) {
                 <textarea
                   className={cn(area, "min-h-[7rem] font-mono")}
                   value={quick.text}
-                  placeholder={"Main tag | Below tag\nNext main tag | Next below tag"}
+                  placeholder={"Title | Lower tag\nFull title (no bar)\nTitle | Lower tag"}
                   onChange={(e) => setQuick({ id: story.id, text: e.target.value })}
                 />
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[9px] text-engrave">
-                    One tag per line: main tag | below tag
+                    One tag per line: "Title | Lower tag", or just "Full title"
                   </span>
                   <button
                     type="button"
@@ -598,20 +599,40 @@ export function NewsDesk({ say }: { say: (msg: string) => void }) {
               >
                 <span className="mk-label pt-2 text-center font-mono text-[10px]">{i + 1}</span>
                 <div className="grid gap-1.5">
+                  <div className="flex gap-1">
+                    {([
+                      [true, "FULL TITLE"],
+                      [false, "TITLE + LOWER TAG"],
+                    ] as const).map(([full, label]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className={cn(
+                          "mk-button h-6 rounded-[3px] px-2 text-[9px]",
+                          !!t.full === full && "mk-lit-preview",
+                        )}
+                        onClick={() => setTag(story, i, { full })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     className={field}
                     value={t.main}
                     maxLength={160}
-                    placeholder="Main tag"
+                    placeholder={t.full ? "Full title" : "Title"}
                     onChange={(e) => setTag(story, i, { main: e.target.value })}
                   />
-                  <input
-                    className={field}
-                    value={t.below}
-                    maxLength={200}
-                    placeholder="Below tag"
-                    onChange={(e) => setTag(story, i, { below: e.target.value })}
-                  />
+                  {!t.full && (
+                    <input
+                      className={field}
+                      value={t.below}
+                      maxLength={200}
+                      placeholder="Lower tag"
+                      onChange={(e) => setTag(story, i, { below: e.target.value })}
+                    />
+                  )}
                 </div>
                 <div className="flex flex-col gap-1">
                   <button
