@@ -1,5 +1,7 @@
+import { MergeEditor } from "@/components/mk/merge-editor";
+import { SqueezeMergeEditor } from "@/components/mk/squeeze-merge-editor";
 import { TBar } from "@/components/mk/t-bar";
-import { SQUEEZE_DIRS, SQUEEZE_GLYPH, type FxConfig, type FxLayoutKind, type SqueezeDir } from "@/lib/mk/fx";
+import { SQUEEZE_DIRS, SQUEEZE_GLYPH, type AdPreset, type FxConfig, type FxLayoutKind, type SqueezeDir } from "@/lib/mk/fx";
 import { mergeLayoutById, type MergePreset } from "@/lib/mk/merge";
 import { DSK_COUNT, RATE_BUTTONS, type DskTarget, type LiveState } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
@@ -22,6 +24,9 @@ interface TransitionPanelProps {
   /** Split-screen Merge looks (2..6 panes + borders) and the one the MERGE button plays. */
   mergePresets: MergePreset[];
   mergeActive: number;
+  /** Squeeze Merge looks and the one the SQZ MERGE button plays (for the SQZ MERGE SETUP editor). */
+  adPresets: AdPreset[];
+  adActive: number;
   onPip: (slot: number) => void;
   onSqueezeMerge: () => void;
   onMove: (dir: SqueezeDir) => void;
@@ -53,6 +58,8 @@ export function TransitionPanel({
   adName,
   mergePresets,
   mergeActive,
+  adPresets,
+  adActive,
   onPip,
   onSqueezeMerge,
   onMove,
@@ -218,6 +225,11 @@ export function TransitionPanel({
             SQZ MERGE
             <span className="max-w-full truncate font-mono text-[6px] font-normal opacity-70">{adName ?? adScene ?? "no ad"}</span>
           </button>
+        </div>
+        {/* Merge + Squeeze Merge setup: each opens its own editor (layout, borders, cams, motion, presets). */}
+        <div className="grid grid-cols-2 gap-1">
+          <MergeEditor presets={mergePresets} active={mergeActive} merging={live.merge} busy={fx.running} />
+          <SqueezeMergeEditor presets={adPresets} adActive={adActive} sqmOn={live.sqm} busy={fx.running} />
         </div>
         <div className="grid grid-cols-5 items-center gap-1">
           <span className="mk-label text-center text-[8px]">MOVE</span>
