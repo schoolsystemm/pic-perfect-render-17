@@ -107,6 +107,8 @@ export interface Transport {
   pipAssign(slot: number, source: string | null): Promise<void>;
   /** Merge panes: put `source` into the "MK PANE n" scene (null = empty). Takes effect on air at once. */
   paneAssign(slot: number, source: string | null): Promise<void>;
+  /** Location tags: make sure "MK TAG n" holds its browser source and point it at `url`, sized w x h (null url = clear it). */
+  tagSet(slot: number, url: string | null, w: number, h: number): Promise<void>;
   /** Make sure the merge helper scenes exist (6 pane scenes + the border colour scene) and the border colour is set. */
   mergePrepare(color: string): Promise<void>;
   /**

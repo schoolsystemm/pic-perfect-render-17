@@ -3,6 +3,7 @@
 // physical MK VISION PANEL hardware interface.
 
 import { DEFAULT_MERGE, type MergePreset } from "./merge";
+import { DEFAULT_TAGS, type TagConfig } from "./tags";
 import { DEFAULT_AD, DEFAULT_FX, DEFAULT_PIPS, type AdConfig, type AdPreset, type DskPlace, type FxConfig, type FxLayoutKind, type PipSlot, type PlacePos } from "./fx";
 
 export const CAM_COUNT = 8;
@@ -438,6 +439,8 @@ export interface MkConfig {
   /** Split-screen Merge looks (2..6 panes + borders), picked on the live screen, set up and saved in the Merge editor. Always at least one. */
   mergePresets: MergePreset[];
   mergeActive: number;
+  /** Location tags: one label per cam, shown at the top of each pane (or where you place it). */
+  tags: TagConfig;
 }
 
 /** What the live compositor is doing in OBS right now (confirmed from OBS, not assumed). */
@@ -450,6 +453,8 @@ export interface LiveState {
   sqm: boolean;
   /** Split-screen Merge is showing (panes + borders in the live buses; PIPs / DSKs / the ad ride on top). */
   merge: boolean;
+  /** Location tags are showing (one per pane while Merge is on, otherwise one for the cam on air). */
+  tags: boolean;
   /** The scene shown in each pane right now (only while `merge`). */
   mergeScenes: string[];
   /** OBS scene names of the program / preview bus (for the monitors). */
@@ -457,7 +462,7 @@ export interface LiveState {
   previewBus: string | null;
 }
 
-export const IDLE_LIVE: LiveState = { on: false, pip: [false, false], sqm: false, merge: false, mergeScenes: [], progBus: null, previewBus: null };
+export const IDLE_LIVE: LiveState = { on: false, pip: [false, false], sqm: false, merge: false, tags: false, mergeScenes: [], progBus: null, previewBus: null };
 
 export interface RundownItem {
   text: string;
@@ -530,6 +535,7 @@ export const DEFAULT_CONFIG: MkConfig = {
   adActive: 0,
   mergePresets: [{ name: "Split 2", merge: DEFAULT_MERGE }],
   mergeActive: 0,
+  tags: DEFAULT_TAGS,
 };
 
 export interface SwitcherState {

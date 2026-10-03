@@ -46,6 +46,7 @@ import {
   resolvePaneScenes,
   type MergeConfig,
 } from "./merge";
+import { TAG_SCENES, TAG_SLOTS, cleanTags, tagSpot, tagUrl, type TagConfig, type TagSlot } from "./tags";
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import type { Transport, TransportEvent } from "./transport";
@@ -130,6 +131,13 @@ export class SwitcherEngine {
   /** While PiP / Merge is held on air: the two scenes involved and the canvas size. */
   /** The merge helper scenes (pane scenes + border colour) exist in OBS, so the buses may hold their items. */
   private mergeReady = false;
+  /** The location-tag scenes / browser sources exist in OBS, so the buses may hold their items. */
+  private tagsReady = false;
+  /** What each tag browser source was last pointed at (url + size), so unchanged tags are never reloaded. */
+  private tagCache = new Map<number, string>();
+  /** The tag layout last drawn; an identical one needs no work. */
+  private tagKey = "";
+  private tagTimer: ReturnType<typeof setTimeout> | null = null;
   private fxHold: { a: string; b: string; w: number; h: number } | null = null;
   /** While OBS program is an MK LIVE bus: which cam scene each bus shows, and the canvas size. */
   private live: { mains: Record<string, string>; w: number; h: number } | null = null;
@@ -168,6 +176,8 @@ export class SwitcherEngine {
   private set(patch: Partial<SwitcherState>) {
     this.state = { ...this.state, ...patch };
     this.notify();
+    // Location tags follow the cam on air, the Merge panes and their own settings, whatever changed them.
+    if (this.state.live.tags && (patch.config || patch.live || patch.programScene !== undefined)) this.scheduleTagSync();
   }
 
   private updateConfig(patch: Partial<MkConfig>) {
@@ -255,6 +265,9 @@ export class SwitcherEngine {
     this.fxHold = null;
     this.live = null;
     this.mergeReady = false;
+    this.tagsReady = false;
+    this.tagCache.clear();
+    this.tagKey = "";
     this.recovering = false;
     this.set({ fx: { running: false, layout: null }, live: IDLE_LIVE });
     const { demoMode, host, port, password } = this.state.config;
@@ -341,7 +354,7 @@ export class SwitcherEngine {
         break;
       }
       case "scenes":
-        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !isStage(n) && !(PIP_SCENES as string[]).includes(n) && !(MERGE_PANES as string[]).includes(n) && n !== MERGE_BG) });
+        this.set({ scenes: event.scenes.filter((n) => !isLiveBus(n) && !isStage(n) && !(PIP_SCENES as string[]).includes(n) && !(MERGE_PANES as string[]).includes(n) && !TAG_SCENES.includes(n) && n !== MERGE_BG) });
         break;
       case "transitions":
         this.set({ transitions: event.transitions });
@@ -1085,7 +1098,8 @@ export class SwitcherEngine {
     const { ad, dsks } = this.state.config;
     const dskSources = dsks.map((d) => d.source).filter((n): n is string => !!n && n !== ad.scene && !this.fxCams().includes(n));
     const merge = this.mergeReady ? [MERGE_BG, ...MERGE_PANES] : [];
-    return [...new Set([...(ad.scene ? [ad.scene] : []), ...merge, ...PIP_SCENES, ...dskSources])];
+    const tags = this.tagsReady ? TAG_SCENES : [];
+    return [...new Set([...(ad.scene ? [ad.scene] : []), ...merge, ...tags, ...PIP_SCENES, ...dskSources])];
   }
 
   /** Where a DSK that rides in the bus sits, inside `region` (the squeezed picture area, or the whole screen). */
@@ -1110,7 +1124,7 @@ export class SwitcherEngine {
     this.state.config.dsks.forEach((d, i) => {
       if (d.source && this.dskBus[i] && this.state.dskActive[i]) out[d.source] = this.dskRect(i, region);
     });
-    Object.assign(out, this.mergeItems(region));
+    Object.assign(out, this.mergeItems(region), this.tagItems(region));
     return out;
   }
 
@@ -1135,7 +1149,7 @@ export class SwitcherEngine {
     dsks.forEach((d, i) => {
       if (d.source && this.dskBus[i]) frame[d.source] = this.state.dskActive[i] ? this.dskRect(i, region) : null;
     });
-    Object.assign(frame, this.mergeItems(region));
+    Object.assign(frame, this.mergeItems(region), this.tagItems(region));
     if (ad.scene) frame[ad.scene] = this.state.live.sqm ? this.adTargets().end.ad : null;
     await this.transport?.fxFrame(frame, bus);
   }
@@ -1199,7 +1213,7 @@ export class SwitcherEngine {
       await this.liveDrawMain(B, prev, FULL_RECT);
       await t.fxCutTo(A);
       await t.setPreviewScene(B);
-      this.setLive({ on: true, pip: [false, false], sqm: false, merge: false, mergeScenes: [], progBus: A, previewBus: B });
+      this.setLive({ on: true, pip: [false, false], sqm: false, merge: false, tags: false, mergeScenes: [], progBus: A, previewBus: B });
       await this.dskToBus(A, B);
       return true;
     } catch (error) {
@@ -1241,7 +1255,7 @@ export class SwitcherEngine {
 
   private async maybeExitLive() {
     const { live, fx, transitioning } = this.state;
-    if (this.live && !fx.running && !transitioning && !live.sqm && !live.merge && !live.pip.some(Boolean)) await this.exitLive();
+    if (this.live && !fx.running && !transitioning && !live.sqm && !live.merge && !live.tags && !live.pip.some(Boolean)) await this.exitLive();
   }
 
   /** OBS was already on a live bus when we connected: rebuild the controller's live state from OBS. */
@@ -1260,6 +1274,7 @@ export class SwitcherEngine {
       const { width, height } = await t.fxStage(cams, mainA, mainA, A);
       await t.fxStage(cams, mainB, mainB, B);
       await this.prepareMerge(this.activeMerge().color);
+      this.tagsReady = TAG_SCENES.some((n) => n in ra || n in rb);
       const overlays = this.overlaySources();
       await t.liveEnsure(A, overlays, this.adUnder());
       await t.liveEnsure(B, overlays, this.adUnder());
@@ -1284,6 +1299,7 @@ export class SwitcherEngine {
           pip: PIP_SCENES.map((n) => !!cur[n]),
           sqm: !!(ad && cur[ad]),
           merge: mergeOn,
+          tags: TAG_SCENES.some((n) => !!cur[n]),
           mergeScenes: mergeOn ? resolvePaneScenes(this.activeMerge(), cams, main, bus === A ? mainB : mainA) : [],
           progBus: bus,
           previewBus: this.otherBus(bus),
@@ -1435,11 +1451,11 @@ export class SwitcherEngine {
       await this.adAnimate(
         ms,
         cfg.style,
-        (e) => t.fxFrame({ [cam]: region, ...this.mergeItemsAt(cfg, region, turningOn ? e : 1 - e) }, bus),
+        (e) => t.fxFrame({ [cam]: region, ...this.mergeItemsAt(cfg, region, turningOn ? e : 1 - e), ...this.tagItemsHidden() }, bus),
         (raw) => this.set({ tBar: raw }),
       );
       this.setLive({ merge: turningOn, mergeScenes: turningOn ? scenes : [] });
-      await t.fxFrame({ [cam]: turningOn ? null : region, ...this.mergeItems(region) }, bus);
+      await t.fxFrame({ [cam]: turningOn ? null : region, ...this.mergeItems(region), ...this.tagItems(region) }, bus);
       await this.liveSyncFree();
       const real = await t.liveRead(bus);
       const on = !!real[MERGE_BG];
@@ -1519,6 +1535,150 @@ export class SwitcherEngine {
     const next = index === mergeActive ? 0 : mergeActive > index ? mergeActive - 1 : mergeActive;
     this.updateConfig({ mergePresets: list, mergeActive: next });
     if (index === mergeActive) await this.redrawMerge();
+  }
+
+  // ------------------------------------------------------------ location tags
+  // One small browser source per pane ("MK TAG n"), drawn at the size of its pane, so a tag always sits inside its own
+  // picture. With Merge on every pane gets the tag of the cam in it; without Merge the cam on air gets one.
+
+  /** The tags to show right now: where, how big, and the page to draw. */
+  private tagSlots(): TagSlot[] {
+    const live = this.live;
+    if (!live) return [];
+    const cfg = this.state.config.tags;
+    const out: TagSlot[] = [];
+    const add = (slot: number, scene: string | undefined, x: number, y: number, w: number, h: number) => {
+      if (!scene) return;
+      const label = (cfg.labels[scene] ?? "").trim();
+      if (!label) return;
+      out.push({ slot, scene, label, url: tagUrl(label, cfg, tagSpot(cfg, scene)), w: Math.round(w), h: Math.round(h), x, y });
+    };
+    if (this.state.live.merge) {
+      const scenes = this.state.live.mergeScenes;
+      mergeRects(this.activeMerge(), live.w, live.h, 1).panes.forEach((p, i) => {
+        if (p) add(i, scenes[i], p.x, p.y, (live.w - (p.cl ?? 0) - (p.cr ?? 0)) * p.sx, (live.h - (p.ct ?? 0) - (p.cb ?? 0)) * p.sy);
+      });
+    } else {
+      add(0, live.mains[this.progBus()], 0, 0, live.w, live.h);
+    }
+    return out;
+  }
+
+  /** Every tag item hidden (while the panes move). */
+  private tagItemsHidden(): Record<string, FxRect | null> {
+    return Object.fromEntries(this.tagsReady ? TAG_SCENES.map((n) => [n, null]) : []);
+  }
+
+  /** The tag items as they rest now, placed inside `region`. */
+  private tagItems(region: FxRect): Record<string, FxRect | null> {
+    const out = this.tagItemsHidden();
+    if (!this.tagsReady || !this.state.live.tags) return out;
+    for (const s of this.tagSlots()) {
+      const name = TAG_SCENES[s.slot];
+      if (name) out[name] = placeIn({ x: s.x, y: s.y, sx: 1, sy: 1, cl: 0, cr: 0, ct: 0, cb: 0 }, region);
+    }
+    return out;
+  }
+
+  private scheduleTagSync() {
+    if (this.tagTimer) clearTimeout(this.tagTimer);
+    this.tagTimer = setTimeout(() => {
+      this.tagTimer = null;
+      void this.syncTags().catch(() => {});
+    }, 350);
+  }
+
+  /** Point every tag at its text / size, then place them. Does nothing when nothing changed. */
+  private async syncTags(force = false) {
+    const t = this.transport;
+    if (!t || !this.live || !this.state.live.tags || !this.tagsReady) return;
+    if (this.state.fx.running && !force) {
+      this.scheduleTagSync();
+      return;
+    }
+    const slots = this.tagSlots();
+    const key = JSON.stringify([this.state.live.merge, slots.map((s) => [s.slot, s.url, s.w, s.h, s.x, s.y])]);
+    if (!force && key === this.tagKey) return;
+    this.tagKey = key;
+    for (let i = 0; i < TAG_SLOTS; i++) {
+      const s = slots.find((x) => x.slot === i);
+      const ck = s ? `${s.url}|${s.w}|${s.h}` : "";
+      if (this.tagCache.get(i) === ck) continue;
+      await t.tagSet(i, s ? s.url : null, s ? s.w : 2, s ? s.h : 2);
+      this.tagCache.set(i, ck);
+    }
+    await this.liveDrawOverlays(this.progBus());
+    await this.liveSyncFree();
+  }
+
+  /** TAGS button: location tags on / off. Rides on top of the picture, the Merge panes and the PIPs' layer order. */
+  async toggleTags() {
+    if (this.state.fx.running) return;
+    if (this.state.fx.layout) {
+      this.notice(`Close ${this.state.fx.layout.toUpperCase()} first`);
+      return;
+    }
+    const turningOn = !this.state.live.tags;
+    if (turningOn) {
+      if (!this.fxCams().length) {
+        this.notice("Tags: map your cams to OBS scenes in Settings first");
+        return;
+      }
+      if (!this.live && !(await this.enterLive())) return;
+    }
+    const t = this.transport;
+    if (!t || !this.live) return;
+    this.set({ fx: { running: true, layout: null } });
+    try {
+      if (turningOn) {
+        for (let i = 0; i < TAG_SLOTS; i++) await t.tagSet(i, null, 2, 2); // creates the scenes + browser sources
+        this.tagsReady = true;
+        this.tagCache.clear();
+        this.tagKey = "";
+        const overlays = this.overlaySources();
+        const bus = this.progBus();
+        await t.liveEnsure(bus, overlays, this.adUnder());
+        await t.liveEnsure(this.otherBus(bus), overlays, this.adUnder());
+      }
+      this.setLive({ tags: turningOn });
+      if (turningOn) {
+        await this.syncTags(true);
+        if (!this.tagSlots().length) this.notice("Tags are on, but no cam on air has a location text yet (Graphics → TAGS SETUP)");
+      } else {
+        await this.liveDrawOverlays(this.progBus());
+        await this.liveSyncFree();
+      }
+    } catch (error) {
+      const why = error instanceof Error && error.message ? ` (${error.message})` : "";
+      this.notice(`Tags: OBS did not apply it${why}`);
+      this.tagsReady = false;
+      this.setLive({ tags: false });
+    } finally {
+      this.set({ fx: { running: false, layout: null } });
+    }
+    await this.maybeExitLive();
+  }
+
+  /** Change the look / text / spot of the tags. Saved at once; what is on air follows after a short pause. */
+  setTags(patch: Partial<TagConfig>) {
+    this.updateConfig({ tags: cleanTags({ ...this.state.config.tags, ...patch }) });
+  }
+
+  /** The location text of one cam ("" = no tag for it). */
+  setTagLabel(scene: string, text: string) {
+    const { labels } = this.state.config.tags;
+    const next = { ...labels };
+    if (text.trim()) next[scene] = text.slice(0, 60);
+    else delete next[scene];
+    this.setTags({ labels: next });
+  }
+
+  /** Place one cam's tag by hand (null = back to the default spot). */
+  setTagSpot(scene: string, pos: { x: number; y: number } | null) {
+    const spots = { ...this.state.config.tags.spots };
+    if (pos) spots[scene] = pos;
+    else delete spots[scene];
+    this.setTags({ spots });
   }
 
   /** Assign a scene to PIP n. It stays there until changed; if the PIP is on air OBS swaps it live. */

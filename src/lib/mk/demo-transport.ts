@@ -227,6 +227,7 @@ export class DemoTransport implements Transport {
   async pipAssign() {}
   async paneAssign() {}
   async mergePrepare() {}
+  async tagSet() {}
   async liveEnsure() {}
   async liveRead(scene: string): Promise<Record<string, boolean>> {
     return { ...(this.liveItems[scene] ?? {}) };

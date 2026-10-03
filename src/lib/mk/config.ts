@@ -16,6 +16,7 @@ import {
   type PlacePos,
 } from "./fx";
 import { DEFAULT_MERGE, cleanMerge, type MergePreset } from "./merge";
+import { cleanTags } from "./tags";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -280,6 +281,7 @@ export function loadConfig(): MkConfig {
         // The working copy always matches the selected preset.
         return { adPresets: merged.adPresets, adActive: active, ad: merged.adPresets[active]!.ad };
       })(),
+      tags: cleanTags((parsed as { tags?: unknown }).tags),
       ...(() => {
         const p = parsed as { mergePresets?: unknown; mergeActive?: unknown };
         const merged = mergeMergePresets(p.mergePresets);

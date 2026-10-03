@@ -3,6 +3,7 @@ import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
 import { EventBus, type Transport } from "./transport";
 import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
+import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
 import { GFX_SCENE } from "./graphics";
 import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
@@ -914,6 +915,40 @@ export class ObsTransport implements Transport {
       await this.obs.call("CreateSceneItem", { sceneName: wrapper, sourceName: source, sceneItemEnabled: true });
     }
     for (const it of items) await this.obs.call("RemoveSceneItem", { sceneName: wrapper, sceneItemId: Number(it["sceneItemId"]) });
+  }
+
+  async tagSet(slot: number, url: string | null, w: number, h: number) {
+    const scene = TAG_SCENES[slot];
+    const input = TAG_INPUTS[slot];
+    if (!scene || !input) return;
+    await this.ensureScene(scene);
+    const settings = {
+      url: url ?? "about:blank",
+      width: Math.max(2, Math.round(w)),
+      height: Math.max(2, Math.round(h)),
+      css: "body { background-color: rgba(0,0,0,0); margin: 0px auto; overflow: hidden; }",
+      // Never reload just because it went on air: a take must not make the tag flash.
+      shutdown: false,
+      restart_when_active: false,
+    };
+    let exists = true;
+    try {
+      await this.obs.call("GetInputSettings", { inputName: input });
+    } catch {
+      exists = false;
+    }
+    if (!exists) {
+      await this.obs.call("CreateInput", { sceneName: scene, inputName: input, inputKind: "browser_source", inputSettings: settings, sceneItemEnabled: true });
+      return;
+    }
+    await this.obs.call("SetInputSettings", { inputName: input, inputSettings: settings, overlay: true });
+    let id: number;
+    try {
+      id = (await this.obs.call("GetSceneItemId", { sceneName: scene, sourceName: input })).sceneItemId;
+    } catch {
+      id = (await this.obs.call("CreateSceneItem", { sceneName: scene, sourceName: input, sceneItemEnabled: true })).sceneItemId;
+    }
+    await this.obs.call("SetSceneItemEnabled", { sceneName: scene, sceneItemId: id, sceneItemEnabled: true });
   }
 
   async mergePrepare(color: string) {
