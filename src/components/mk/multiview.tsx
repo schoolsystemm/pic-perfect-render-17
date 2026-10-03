@@ -28,6 +28,13 @@ interface MultiviewProps {
   demo: boolean;
   graphics: GraphicsConfig;
   gfxActive: Record<GfxId, boolean>;
+  /** Show a wall of small camera monitors under the two main ones. */
+  wall?: boolean;
+  camScenes?: (string | null)[];
+  /** Low-rate thumbnail for one scene (camera wall). */
+  getThumb?: (scene: string) => Promise<string | null>;
+  onPreviewCam?: (cam: CamIndex) => void;
+  onProgramCam?: (cam: CamIndex) => void;
 }
 
 function timecode(now: number) {
