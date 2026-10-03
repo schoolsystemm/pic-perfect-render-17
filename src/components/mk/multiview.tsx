@@ -150,11 +150,11 @@ function CamThumb({
   cam: CamIndex;
   scene: string | null;
   live: boolean;
-  getThumb?: (scene: string) => Promise<string | null>;
+  getThumb?: ((scene: string) => Promise<string | null>) | undefined;
   isProgram: boolean;
   isPreview: boolean;
-  onPreview?: (cam: CamIndex) => void;
-  onProgram?: (cam: CamIndex) => void;
+  onPreview?: ((cam: CamIndex) => void) | undefined;
+  onProgram?: ((cam: CamIndex) => void) | undefined;
 }) {
   const [thumb, setThumb] = useState<string | null>(null);
   useEffect(() => {

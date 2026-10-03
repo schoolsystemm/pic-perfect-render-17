@@ -654,6 +654,15 @@ export interface OutputState {
 
 export const IDLE_OUTPUT: OutputState = { active: false, paused: false, since: null, baseMs: 0 };
 
+/** Live stream health, polled from OBS while streaming. */
+export interface StreamStats {
+  bitrateKbps: number;
+  totalFrames: number;
+  droppedFrames: number;
+  /** OBS CPU load, percent. */
+  cpu: number;
+}
+
 export const FADER_MIN = -60;
 export const FADER_MAX = 6;
 
