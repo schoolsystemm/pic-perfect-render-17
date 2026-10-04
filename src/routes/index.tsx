@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { AudioMixer, Master } from "@/components/mk/audio-mixer";
+import { MonitorSection } from "@/components/mk/monitor-section";
 import { ListenControl } from "@/components/mk/listen-control";
 import { GraphicsPanel } from "@/components/mk/graphics-panel";
 import { usePanels, type Panel } from "@/lib/mk/use-panels";
@@ -158,11 +159,29 @@ function Switcher() {
                     onMute={(name) => void engine.toggleAudioMute(name)}
                     onMonitor={(name) => void engine.cycleAudioMonitor(name)}
                     onStream={(name) => void engine.toggleAudioStream(name)}
-                    onPre={(name) => void engine.toggleAudioPre(name)}
-                    onHearFinal={(on) => void engine.hearFinalInPre(on)}
                     onAfv={(on) => engine.setAudioFollowVideo(on)}
                     onLimiter={(patch) => engine.setLimiter(patch)}
                     onMuteOut={() => void engine.toggleMasterMute()}
+                    monitorMode={state.monitor.mode}
+                    solo={state.monitor.solo}
+                    select={state.monitor.select}
+                    onSolo={(name) => void engine.toggleSolo(name)}
+                    onSelect={(name) => engine.selectSolo(name)}
+                  />
+                </div>
+              )}
+              {show.audio && (
+                <div className="h-44 min-w-0 fit:h-auto fit:w-[14.5rem] fit:shrink-0">
+                  <MonitorSection
+                    channels={stripInputs}
+                    monitor={state.monitor}
+                    onMode={(mode) => void engine.setMonitorMode(mode)}
+                    onSelect={(name) => engine.selectSolo(name)}
+                    onEq={(name, patch) => engine.setEq(name, patch)}
+                    onTake={(name) => void engine.takeEq(name)}
+                    onTakeAll={() => void engine.takeAllEq()}
+                    onCopy={() => engine.copyEq()}
+                    onPaste={() => engine.pasteEq()}
                   />
                 </div>
               )}
@@ -245,8 +264,6 @@ function Switcher() {
               onMute={(name) => void engine.toggleAudioMute(name)}
               onMonitor={(name) => void engine.cycleAudioMonitor(name)}
               onStream={(name) => void engine.toggleAudioStream(name)}
-              onPre={(name) => void engine.toggleAudioPre(name)}
-              onHearFinal={(on) => void engine.hearFinalInPre(on)}
               onAfv={(on) => engine.setAudioFollowVideo(on)}
               onLimiter={(patch) => engine.setLimiter(patch)}
               onMuteOut={() => void engine.toggleMasterMute()}
