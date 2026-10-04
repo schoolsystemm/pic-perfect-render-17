@@ -6,7 +6,7 @@ import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
 import { GFX_SCENE } from "./graphics";
-import { DSK_COUNT, type AudioChannel, type MonitorType } from "./types";
+import { DSK_COUNT, FLAT_EQ, type AudioChannel, type EqValues, type MonitorType } from "./types";
 
 export interface ObsTransportOptions {
   host: string;
@@ -27,6 +27,8 @@ function monitorFromObs(value: string | undefined): MonitorType {
 }
 
 const LIMITER_FILTER = "MK Limiter";
+const GAIN_FILTER = "MK Gain";
+const EQ_FILTER = "MK EQ";
 
 const MAIN_KINDS = [
   "wasapi_output_capture",
@@ -259,6 +261,7 @@ export class ObsTransport implements Transport {
             monitor,
             stream,
             pre,
+            eq: await this.readEq(name),
           });
         } catch {
           /* not an audio input */
@@ -317,6 +320,46 @@ export class ObsTransport implements Transport {
       inputName: name,
       inputAudioTracks: { "2": enabled },
     });
+  }
+
+  /** Read the MK Gain / MK EQ filters of an input (flat when they do not exist or are off). */
+  private async readEq(name: string): Promise<EqValues> {
+    const eq = { ...FLAT_EQ };
+    try {
+      const { filters } = await this.obs.call("GetSourceFilterList", { sourceName: name });
+      for (const f of filters as Array<Record<string, unknown>>) {
+        if (f["filterEnabled"] === false) continue;
+        const st = (f["filterSettings"] ?? {}) as Record<string, unknown>;
+        if (f["filterName"] === GAIN_FILTER) eq.gain = Number(st["db"] ?? 0);
+        if (f["filterName"] === EQ_FILTER) {
+          eq.lo = Number(st["low"] ?? 0);
+          eq.mid = Number(st["mid"] ?? 0);
+          eq.hi = Number(st["high"] ?? 0);
+        }
+      }
+    } catch {
+      /* input without filter support */
+    }
+    return eq;
+  }
+
+  /** Gain and 3-band EQ live on each input as OBS filters named MK Gain (gain_filter) and MK EQ (basic_eq_filter). */
+  async setInputEq(name: string, eq: EqValues) {
+    await this.upsertFilter(name, GAIN_FILTER, "gain_filter", { db: eq.gain }, eq.gain !== 0);
+    await this.upsertFilter(name, EQ_FILTER, "basic_eq_filter", { low: eq.lo, mid: eq.mid, high: eq.hi }, eq.lo !== 0 || eq.mid !== 0 || eq.hi !== 0);
+  }
+
+  private async upsertFilter(sourceName: string, filterName: string, filterKind: string, filterSettings: Record<string, number>, enabled: boolean) {
+    const { filters } = await this.obs.call("GetSourceFilterList", { sourceName });
+    const has = (filters as Array<Record<string, unknown>>).some((f) => f["filterName"] === filterName);
+    if (!has) {
+      if (!enabled) return;
+      await this.obs.call("CreateSourceFilter", { sourceName, filterName, filterKind, filterSettings });
+      await this.obs.call("SetSourceFilterIndex", { sourceName, filterName, filterIndex: 0 }).catch(() => {});
+      return;
+    }
+    await this.obs.call("SetSourceFilterSettings", { sourceName, filterName, filterSettings, overlay: true });
+    await this.obs.call("SetSourceFilterEnabled", { sourceName, filterName, filterEnabled: enabled });
   }
 
   /** The limiter lives on each input as an OBS "Limiter" filter named MK Limiter. */

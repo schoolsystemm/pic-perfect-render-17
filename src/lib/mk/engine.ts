@@ -49,6 +49,7 @@ import {
 import { TAG_PLACE_MAX, TAG_SCENES, TAG_SLOTS, cleanTags, placeText, tagSpot, tagUrl, type TagConfig, type TagSlot } from "./tags";
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
+import { listener } from "./listen";
 import type { Transport, TransportEvent } from "./transport";
 import {
   CAM_COUNT,
@@ -56,16 +57,21 @@ import {
   DSK_COUNT,
   FADER_MAX,
   FADER_MIN,
+  FLAT_EQ,
   IDLE_GFX,
   IDLE_LIVE,
+  IDLE_MONITOR,
   IDLE_OUTPUT,
   type CamIndex,
   type DskTarget,
+  type EqValues,
   type GfxId,
   type GraphicsConfig,
   type LimiterConfig,
   type LiveState,
   type MkConfig,
+  type MonitorMode,
+  type MonitorState,
   type MonitorType,
   type OutputState,
   type RundownItem,
@@ -105,6 +111,7 @@ function initialState(config: MkConfig): SwitcherState {
     notice: null,
     gr: null,
     masterMuted: false,
+    monitor: IDLE_MONITOR,
   };
 }
 
@@ -329,7 +336,10 @@ export class SwitcherEngine {
       levels: {},
       stream: IDLE_OUTPUT,
       record: IDLE_OUTPUT,
+      monitor: IDLE_MONITOR,
     });
+    this.lifted.clear();
+    listener.setPreviewEq(null);
   }
 
   private async teardown() {
@@ -466,6 +476,7 @@ export class SwitcherEngine {
       case "audio":
         this.set({ audio: event.channels });
         if (this.state.config.limiter.on) void this.applyLimiter();
+        void this.routeMonitor();
         break;
       case "limiter":
         this.set({ gr: event.gr });
@@ -484,6 +495,7 @@ export class SwitcherEngine {
                   monitor: event.monitor ?? c.monitor,
                   stream: event.stream ?? c.stream,
                   pre: event.pre ?? c.pre,
+                  ...((event.eq ?? c.eq) ? { eq: event.eq ?? c.eq } : {}),
                 }
               : c,
           ),
@@ -555,6 +567,7 @@ export class SwitcherEngine {
 
   async setAudioVolume(name: string, db: number) {
     const clamped = Math.min(FADER_MAX, Math.max(FADER_MIN, db));
+    this.lifted.delete(name);
     this.onTransportEvent({ type: "audioChannel", name, db: clamped });
     await this.transport?.setInputVolume(name, clamped).catch(() => {});
   }
@@ -562,6 +575,7 @@ export class SwitcherEngine {
   async toggleAudioMute(name: string) {
     const channel = this.state.audio.find((c) => c.name === name);
     if (!channel) return;
+    this.lifted.delete(name);
     this.onTransportEvent({ type: "audioChannel", name, muted: !channel.muted });
     await this.transport?.setInputMute(name, !channel.muted).catch(() => {});
   }
@@ -648,6 +662,148 @@ export class SwitcherEngine {
       this.onTransportEvent({ type: "audioChannel", name: c.name, pre: on });
       await this.transport?.setInputPre(c.name, on).catch(() => {});
     }
+  }
+
+
+  // ------------------------------------------------- monitor: MAIN / SOLO + staged EQ
+  // Console workflow: MAIN = the pre-listen feed (OBS track 2) follows the final mix. SOLO = it plays only
+  // the soloed inputs, before their faders. Gain / EQ changes made while soloed are STAGED (heard only in
+  // the headphones, as a browser preview) until TAKE writes them to OBS.
+
+  private lifted = new Map<string, { db: number; muted: boolean }>();
+  private eqTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  private setMonitor(patch: Partial<MonitorState>) {
+    this.set({ monitor: { ...this.state.monitor, ...patch } });
+    this.syncPreviewEq();
+  }
+
+  private eqOf(name: string): EqValues {
+    return this.state.audio.find((c) => c.name === name)?.eq ?? FLAT_EQ;
+  }
+
+  private sameEq(a: EqValues, b: EqValues) {
+    return a.gain === b.gain && a.hi === b.hi && a.mid === b.mid && a.lo === b.lo;
+  }
+
+  /** Let the listening device hear the staged change (difference to what OBS has now). */
+  private syncPreviewEq() {
+    const { mode, select, staged } = this.state.monitor;
+    const st = mode === "solo" && select ? staged[select] : undefined;
+    if (!st || !select) return listener.setPreviewEq(null);
+    const live = this.eqOf(select);
+    listener.setPreviewEq({ gain: st.gain - live.gain, hi: st.hi - live.hi, mid: st.mid - live.mid, lo: st.lo - live.lo });
+  }
+
+  /** Put the right inputs on the pre-listen track, and lift soloed inputs that are off air but faded down. */
+  private async routeMonitor() {
+    if (!this.transport) return;
+    const { mode, solo } = this.state.monitor;
+    for (const c of [...this.state.audio]) {
+      const soloed = mode === "solo" && solo.includes(c.name);
+      const want = mode === "main" ? c.stream : soloed;
+      if (c.pre !== want) {
+        this.onTransportEvent({ type: "audioChannel", name: c.name, pre: want });
+        await this.transport.setInputPre(c.name, want).catch(() => {});
+      }
+      await this.liftFor(c.name, soloed && !c.stream);
+    }
+  }
+
+  /** OBS tracks are taken after mute and fader: lift a soloed, off-air input while it is soloed, then put it back. */
+  private async liftFor(name: string, on: boolean) {
+    const ch = this.state.audio.find((c) => c.name === name);
+    if (!ch || !this.transport) return;
+    const held = this.lifted.get(name);
+    if (on) {
+      if (held || (!ch.muted && ch.db > FADER_MIN)) return;
+      this.lifted.set(name, { db: ch.db, muted: ch.muted });
+      this.onTransportEvent({ type: "audioChannel", name, db: 0, muted: false });
+      await this.transport.setInputVolume(name, 0).catch(() => {});
+      await this.transport.setInputMute(name, false).catch(() => {});
+    } else if (held) {
+      this.lifted.delete(name);
+      this.onTransportEvent({ type: "audioChannel", name, db: held.db, muted: held.muted });
+      await this.transport.setInputVolume(name, held.db).catch(() => {});
+      await this.transport.setInputMute(name, held.muted).catch(() => {});
+    }
+  }
+
+  /** MAIN: back to normal (staged edits you did not TAKE are dropped). SOLO: arm the solo keys. */
+  async setMonitorMode(mode: MonitorMode) {
+    this.setMonitor(mode === "main" ? { mode, solo: [], select: null, staged: {} } : { mode, solo: [], select: null });
+    await this.routeMonitor();
+  }
+
+  async toggleSolo(name: string) {
+    const m = this.state.monitor;
+    if (m.mode !== "solo") return;
+    const solo = m.solo.includes(name) ? m.solo.filter((n) => n !== name) : [...m.solo, name];
+    const select = solo.includes(name) ? name : m.select === name ? (solo[solo.length - 1] ?? null) : m.select;
+    this.setMonitor({ solo, select });
+    await this.routeMonitor();
+  }
+
+  selectSolo(name: string) {
+    if (this.state.monitor.solo.includes(name)) this.setMonitor({ select: name });
+  }
+
+  /** Knob turned. While soloed the change is staged; otherwise it goes straight to OBS. */
+  setEq(name: string, patch: Partial<EqValues>) {
+    const m = this.state.monitor;
+    const live = this.eqOf(name);
+    const next = { ...(m.staged[name] ?? live), ...patch };
+    if (m.mode === "solo" && (m.solo.includes(name) || m.staged[name])) {
+      const staged = { ...m.staged };
+      if (this.sameEq(next, live)) delete staged[name];
+      else staged[name] = next;
+      this.setMonitor({ staged });
+      return;
+    }
+    this.onTransportEvent({ type: "audioChannel", name, eq: next });
+    const old = this.eqTimers.get(name);
+    if (old) clearTimeout(old);
+    this.eqTimers.set(
+      name,
+      setTimeout(() => {
+        this.eqTimers.delete(name);
+        void this.transport?.setInputEq(name, next).catch(() => {});
+      }, 80),
+    );
+  }
+
+  /** TAKE: send one input's staged values to OBS. */
+  async takeEq(name: string) {
+    const m = this.state.monitor;
+    const eq = m.staged[name];
+    if (!eq) return;
+    const staged = { ...m.staged };
+    delete staged[name];
+    this.onTransportEvent({ type: "audioChannel", name, eq });
+    this.setMonitor({ staged });
+    await this.transport?.setInputEq(name, eq).catch(() => {});
+  }
+
+  async takeAllEq() {
+    for (const name of Object.keys(this.state.monitor.staged)) await this.takeEq(name);
+  }
+
+  copyEq() {
+    const { select, staged } = this.state.monitor;
+    if (!select) return;
+    this.setMonitor({ clip: staged[select] ?? this.eqOf(select) });
+  }
+
+  /** PASTE the copy buffer onto every soloed input, as staged changes. */
+  pasteEq() {
+    const m = this.state.monitor;
+    if (m.mode !== "solo" || !m.clip) return;
+    const staged = { ...m.staged };
+    for (const name of m.solo) {
+      if (this.sameEq(m.clip, this.eqOf(name))) delete staged[name];
+      else staged[name] = m.clip;
+    }
+    this.setMonitor({ staged });
   }
 
   setAudioFollowVideo(on: boolean) {

@@ -628,6 +628,8 @@ export interface SwitcherState {
   gr: number | null;
   /** MUTE OUT is holding every final-mix input muted. */
   masterMuted: boolean;
+  /** Console-style monitor section: MAIN / SOLO, staged EQ edits, copy buffer. */
+  monitor: MonitorState;
 }
 
 export interface AudioChannel {
@@ -641,7 +643,44 @@ export interface AudioChannel {
   stream: boolean;
   /** Goes to the PRE-LISTEN mix (OBS audio track 2) — what the Listen button plays. */
   pre: boolean;
+  /** Live gain + 3-band EQ (the MK Gain / MK EQ filters on the OBS input). Flat when absent. */
+  eq?: EqValues;
 }
+
+/** Gain and 3-band EQ of one input, all in dB. */
+export interface EqValues {
+  gain: number;
+  hi: number;
+  mid: number;
+  lo: number;
+}
+
+export const FLAT_EQ: EqValues = { gain: 0, hi: 0, mid: 0, lo: 0 };
+
+/** Knob ranges: [min, max] in dB. */
+export const EQ_RANGE: Record<keyof EqValues, [number, number]> = {
+  gain: [-20, 20],
+  hi: [-15, 15],
+  mid: [-15, 15],
+  lo: [-15, 15],
+};
+
+/** MAIN = the pre-listen feed follows the final mix. SOLO = it plays only the soloed inputs. */
+export type MonitorMode = "main" | "solo";
+
+export interface MonitorState {
+  mode: MonitorMode;
+  /** Soloed input names (SOLO mode only). */
+  solo: string[];
+  /** The soloed input whose knobs are shown. */
+  select: string | null;
+  /** Changes made in SOLO that are not on air yet (TAKE sends them). Keyed by input name. */
+  staged: Record<string, EqValues>;
+  /** COPY buffer. */
+  clip: EqValues | null;
+}
+
+export const IDLE_MONITOR: MonitorState = { mode: "main", solo: [], select: null, staged: {}, clip: null };
 
 export interface OutputState {
   active: boolean;

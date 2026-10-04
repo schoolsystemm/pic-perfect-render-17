@@ -3,6 +3,13 @@
 // back over WebRTC (WHEP). The OBS WebSocket itself cannot carry audio.
 import { useSyncExternalStore } from "react";
 
+export interface PreviewEq {
+  gain: number;
+  hi: number;
+  mid: number;
+  lo: number;
+}
+
 export type ListenStatus = "off" | "connecting" | "live" | "error";
 
 export interface ListenState {
@@ -26,6 +33,9 @@ class Listener {
   private url = "";
   private volume = 1;
   private retry: ReturnType<typeof setTimeout> | null = null;
+  private preview: PreviewEq | null = null;
+  private ctx: AudioContext | null = null;
+  private fx: { src: MediaStreamAudioSourceNode; lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode; out: GainNode } | null = null;
 
   subscribe = (l: () => void) => {
     this.listeners.add(l);
@@ -69,9 +79,76 @@ class Listener {
   setVolume(v: number) {
     this.volume = v;
     if (this.audio) this.audio.volume = v;
+    this.applyPreview();
+  }
+
+  /**
+   * Hear a staged gain / EQ change before it is on air. Runs the incoming feed through a small browser EQ
+   * (shelves at 800 Hz and 5 kHz, a bell between). Only this device hears it. null = flat = bypass.
+   */
+  setPreviewEq(eq: PreviewEq | null) {
+    const flat = !eq || (Math.abs(eq.gain) < 0.05 && Math.abs(eq.hi) < 0.05 && Math.abs(eq.mid) < 0.05 && Math.abs(eq.lo) < 0.05);
+    this.preview = flat ? null : eq;
+    this.applyPreview();
+  }
+
+  private applyPreview() {
+    const stream = this.audio?.srcObject as MediaStream | null | undefined;
+    if (!this.audio || !stream || !this.preview) return this.dropPreview();
+    try {
+      if (!this.ctx || !this.fx) {
+        const ctx = new AudioContext();
+        const src = ctx.createMediaStreamSource(stream);
+        const lo = ctx.createBiquadFilter();
+        lo.type = "lowshelf";
+        lo.frequency.value = 800;
+        const mid = ctx.createBiquadFilter();
+        mid.type = "peaking";
+        mid.frequency.value = 2000;
+        mid.Q.value = 0.5;
+        const hi = ctx.createBiquadFilter();
+        hi.type = "highshelf";
+        hi.frequency.value = 5000;
+        const out = ctx.createGain();
+        src.connect(lo);
+        lo.connect(mid);
+        mid.connect(hi);
+        hi.connect(out);
+        out.connect(ctx.destination);
+        this.ctx = ctx;
+        this.fx = { src, lo, mid, hi, out };
+        this.audio.muted = true;
+      }
+      void this.ctx.resume();
+      const { lo, mid, hi, out } = this.fx;
+      lo.gain.value = this.preview.lo;
+      mid.gain.value = this.preview.mid;
+      hi.gain.value = this.preview.hi;
+      out.gain.value = Math.pow(10, this.preview.gain / 20) * this.volume;
+    } catch {
+      this.dropPreview();
+    }
+  }
+
+  private dropPreview() {
+    if (this.fx) {
+      try {
+        this.fx.src.disconnect();
+        this.fx.out.disconnect();
+      } catch {
+        /* already gone */
+      }
+      this.fx = null;
+    }
+    if (this.ctx) {
+      void this.ctx.close().catch(() => {});
+      this.ctx = null;
+    }
+    if (this.audio) this.audio.muted = false;
   }
 
   private close() {
+    this.dropPreview();
     if (this.pc) {
       this.pc.onconnectionstatechange = null;
       this.pc.ontrack = null;
@@ -109,6 +186,7 @@ class Listener {
         if (this.audio) {
           this.audio.srcObject = e.streams[0] ?? new MediaStream([e.track]);
           this.audio.volume = this.volume;
+          this.applyPreview();
           void this.audio.play().catch(() => {
             this.set({ status: "error", message: "Tap Listen again to allow sound" });
           });

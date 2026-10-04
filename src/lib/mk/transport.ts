@@ -2,7 +2,7 @@
 // mixer backend. OBS WebSocket 5.x and Demo Mode both implement it, and a
 // future hardware bridge can too.
 import type { FxRect } from "./fx";
-import type { AudioChannel, ConnectionStatus, MonitorType } from "./types";
+import type { AudioChannel, ConnectionStatus, EqValues, MonitorType } from "./types";
 
 export type TransportEvent =
   | { type: "status"; status: ConnectionStatus; message?: string }
@@ -27,6 +27,7 @@ export type TransportEvent =
       monitor?: MonitorType;
       stream?: boolean;
       pre?: boolean;
+      eq?: EqValues;
     }
   | { type: "levels"; levels: Record<string, number> }
   | { type: "limiter"; gr: number | null }
@@ -63,6 +64,8 @@ export interface Transport {
   setInputStream(name: string, enabled: boolean): Promise<void>;
   /** Send an input to the pre-listen mix (audio track 2). */
   setInputPre(name: string, enabled: boolean): Promise<void>;
+  /** Set an input's gain + 3-band EQ (the MK Gain / MK EQ filters). */
+  setInputEq(name: string, eq: EqValues): Promise<void>;
   /**
    * Master limiter: put / take an audio limiter on every named input (the ones on the
    * final mix). `threshold` is the ceiling in dBFS.

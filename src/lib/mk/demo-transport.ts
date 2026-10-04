@@ -1,6 +1,6 @@
 // Demo Mode: full switcher behaviour with no OBS present.
 import { EventBus, type Transport } from "./transport";
-import type { AudioChannel, MonitorType } from "./types";
+import type { AudioChannel, EqValues, MonitorType } from "./types";
 
 const DEMO_SCENES = [
   "Camera 1 Wide",
@@ -118,6 +118,12 @@ export class DemoTransport implements Transport {
     const c = this.channels.find((x) => x.name === name);
     if (c) c.pre = enabled;
     this.bus.emit({ type: "audioChannel", name, pre: enabled });
+  }
+
+  async setInputEq(name: string, eq: EqValues) {
+    const c = this.channels.find((x) => x.name === name);
+    if (c) c.eq = eq;
+    this.bus.emit({ type: "audioChannel", name, eq });
   }
 
   async setLimiter(_inputs: string[], on: boolean, threshold: number) {
