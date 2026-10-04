@@ -65,3 +65,11 @@ Then press **Start Recording** in OBS. The pre-listen feed flows while it is run
 Add audio files on the **Sounds** page. **CUE** (headphones button) plays on
 this phone/laptop only — OBS never hears it. **AIR** plays it through OBS
 (clips up to 2 MB). Files stay in this browser. This does NOT need MediaMTX.
+
+---
+# Set up the OBS output from MK
+MK VISION > Settings > Listen > **SET UP IN OBS** writes the Recording output for you (Custom FFmpeg to
+`rtsp://127.0.0.1:8554/mk`, audio Track 2 only) and reports every line. **CHECK** only reads. **RESTORE MY OLD SETTINGS**
+puts your previous Recording settings back. Three things MK cannot change and will tell you about: Output Mode =
+Advanced, audio encoder = libopus, video encoder = Disable Encoder (set those once in OBS). It uses the Recording slot:
+no file recording while it is set. For remote listening see `REMOTE.md`.
