@@ -73,6 +73,7 @@ import {
   type MonitorMode,
   type MonitorState,
   type MonitorType,
+  type OutputCheckRow,
   type OutputState,
   type RundownItem,
   type ScrollPreset,
@@ -2652,7 +2653,18 @@ export class SwitcherEngine {
     await this.transport?.stopSound().catch(() => {});
   }
 
-  setListen(patch: Partial<Pick<MkConfig, "listenUrl" | "listenVolume">>) {
+  /** Check (and with `fix`, repair) the OBS output that feeds pre-listen. null = not connected. */
+  async checkPrelistenOutput(fix: boolean): Promise<OutputCheckRow[] | null> {
+    if (!this.transport) return null;
+    return this.transport.checkPrelistenOutput(fix).catch(() => null);
+  }
+
+  async restorePrelistenOutput(): Promise<OutputCheckRow[] | null> {
+    if (!this.transport) return null;
+    return this.transport.restorePrelistenOutput().catch(() => null);
+  }
+
+  setListen(patch: Partial<Pick<MkConfig, "listenUrl" | "listenVolume" | "listenRemote" | "listenIce">>) {
     this.updateConfig(patch);
   }
 

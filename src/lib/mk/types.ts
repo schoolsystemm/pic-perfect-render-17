@@ -476,6 +476,10 @@ export interface MkConfig {
   listenUrl: string;
   /** Volume of the audio feed on this device, 0..1. */
   listenVolume: number;
+  /** Remote listening: add a STUN server so the audio also connects across routers / the internet. */
+  listenRemote: boolean;
+  /** Extra ICE servers, separated by `;`. A TURN server is `turn:host:3478|user|password`. */
+  listenIce: string;
   /** Master limiter: an OBS Limiter filter on every input that goes to the final mix. */
   limiter: LimiterConfig;
   /** Audio inputs the operator hid from the mixer (they stay in OBS and on the mix). */
@@ -580,6 +584,8 @@ export const DEFAULT_CONFIG: MkConfig = {
   graphicsScene: "",
   listenUrl: "",
   listenVolume: 1,
+  listenRemote: false,
+  listenIce: "",
   limiter: DEFAULT_LIMITER,
   hiddenAudio: [],
   rundown: [],
@@ -710,3 +716,15 @@ export const FADER_MIN = -60;
 export const FADER_MAX = 6;
 
 export const camLabel = (index: CamIndex) => `CAM ${index + 1}`;
+
+/** One line of the pre-listen output check (OBS Recording tab: Custom FFmpeg to MediaMTX). */
+export interface OutputCheckRow {
+  label: string;
+  expected: string;
+  actual: string;
+  ok: boolean;
+  /** MK changed it in OBS just now. */
+  fixed: boolean;
+  /** MK cannot change this one: do it in OBS Settings -> Output. */
+  manual: boolean;
+}

@@ -265,6 +265,8 @@ export function loadConfig(): MkConfig {
       graphicsScene: typeof parsed.graphicsScene === "string" ? parsed.graphicsScene : "",
       listenUrl: typeof parsed.listenUrl === "string" ? parsed.listenUrl : "",
       listenVolume: typeof parsed.listenVolume === "number" ? parsed.listenVolume : 1,
+      listenRemote: parsed.listenRemote === true,
+      listenIce: typeof parsed.listenIce === "string" ? parsed.listenIce : "",
       rundown: Array.isArray(parsed.rundown)
         ? parsed.rundown
             .filter((i) => !!i && typeof i.text === "string" && i.text.trim() !== "")

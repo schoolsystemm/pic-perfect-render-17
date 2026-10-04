@@ -24,6 +24,24 @@ export function resolveListenUrl(saved: string, obsHost: string): string {
   return obsHost ? `http://${obsHost}:8889/mk/whep` : "";
 }
 
+export interface IceOptions {
+  /** Add a public STUN server so it also connects across routers / the internet. */
+  remote: boolean;
+  /** Extra servers separated by `;`. A TURN server is `turn:host:3478|user|password`. */
+  extra: string;
+}
+
+export function buildIceServers(o?: IceOptions): RTCIceServer[] {
+  const servers: RTCIceServer[] = [];
+  if (o?.remote) servers.push({ urls: "stun:stun.l.google.com:19302" });
+  for (const part of (o?.extra ?? "").split(";")) {
+    const [urls, username, credential] = part.trim().split("|");
+    if (!urls) continue;
+    servers.push(username && credential ? { urls, username, credential } : { urls });
+  }
+  return servers;
+}
+
 class Listener {
   private state: ListenState = { status: "off", message: "" };
   private listeners = new Set<() => void>();
@@ -32,6 +50,7 @@ class Listener {
   private wanted = false;
   private url = "";
   private volume = 1;
+  private ice: IceOptions | undefined;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private preview: PreviewEq | null = null;
   private ctx: AudioContext | null = null;
@@ -49,7 +68,7 @@ class Listener {
   }
 
   /** Must be called from a tap/click so the browser allows sound. */
-  async start(url: string, volume: number) {
+  async start(url: string, volume: number, ice?: IceOptions) {
     if (!url) {
       this.set({ status: "error", message: "No audio address — set it in Settings → Listen" });
       return;
@@ -57,6 +76,7 @@ class Listener {
     this.wanted = true;
     this.url = url;
     this.volume = volume;
+    this.ice = ice;
     if (!this.audio) {
       this.audio = new Audio();
       this.audio.autoplay = true;
@@ -173,7 +193,7 @@ class Listener {
     this.close();
     this.set({ status: "connecting", message: "" });
     try {
-      const pc = new RTCPeerConnection({ iceServers: [] }); // same network, no STUN needed
+      const pc = new RTCPeerConnection({ iceServers: buildIceServers(this.ice) }); // empty = same network
       this.pc = pc;
       pc.addTransceiver("audio", { direction: "recvonly" });
       pc.ontrack = (e) => {
@@ -223,7 +243,12 @@ class Listener {
       if (!res.ok) return this.fail(`Audio server said ${res.status}`);
       await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
     } catch {
-      this.fail("Can't reach the audio server — is MediaMTX running?");
+      const blocked = typeof location !== "undefined" && location.protocol === "https:" && this.url.startsWith("http://");
+      this.fail(
+        blocked
+          ? "Blocked: this page is https but the audio address is http. Use an https address (audio-bridge/REMOTE.md)"
+          : "Can't reach the audio server — is MediaMTX running?",
+      );
     }
   }
 }

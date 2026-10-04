@@ -6,7 +6,7 @@ import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
 import { GFX_SCENE } from "./graphics";
-import { DSK_COUNT, FLAT_EQ, type AudioChannel, type EqValues, type MonitorType } from "./types";
+import { DSK_COUNT, FLAT_EQ, type AudioChannel, type EqValues, type MonitorType, type OutputCheckRow } from "./types";
 
 export interface ObsTransportOptions {
   host: string;
@@ -29,6 +29,19 @@ function monitorFromObs(value: string | undefined): MonitorType {
 const LIMITER_FILTER = "MK Limiter";
 const GAIN_FILTER = "MK Gain";
 const EQ_FILTER = "MK EQ";
+
+const PRELISTEN_BACKUP = "mk.prelistenBackup";
+/** What the pre-listen output must look like. `fix` = MK may write it; otherwise it is a manual OBS setting. */
+const PRELISTEN_PARAMS: { cat: string; name: string; label: string; expected: string; fix: boolean; test?: (v: string) => boolean }[] = [
+  { cat: "AdvOut", name: "RecType", label: "Recording type: Custom Output (FFmpeg)", expected: "FFmpeg", fix: true },
+  { cat: "AdvOut", name: "FFOutputToFile", label: "FFmpeg output: to URL", expected: "false", fix: true },
+  { cat: "AdvOut", name: "FFURL", label: "URL", expected: "rtsp://127.0.0.1:8554/mk", fix: true },
+  { cat: "AdvOut", name: "FFFormat", label: "Container format", expected: "rtsp", fix: true },
+  { cat: "AdvOut", name: "FFAudioMixes", label: "Audio track: 2 only", expected: "2", fix: true, test: (v) => Number(v) === 2 },
+  { cat: "Output", name: "Mode", label: "Output mode: Advanced (OBS restart needed if changed)", expected: "Advanced", fix: false },
+  { cat: "AdvOut", name: "FFAEncoder", label: "Audio encoder: libopus", expected: "libopus", fix: false, test: (v) => /opus/i.test(v) },
+  { cat: "AdvOut", name: "FFVEncoderId", label: "Video encoder: Disable Encoder", expected: "0", fix: false, test: (v) => v === "" || v === "0" || v === "-1" },
+];
 
 const MAIN_KINDS = [
   "wasapi_output_capture",
@@ -394,6 +407,52 @@ export class ObsTransport implements Transport {
         /* input without filter support (e.g. media-less) — skip */
       }
     }
+  }
+
+  private async readParam(cat: string, name: string): Promise<string | null> {
+    try {
+      const r = await this.obs.call("GetProfileParameter", { parameterCategory: cat, parameterName: name });
+      return (r.parameterValue as string | null | undefined) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async checkPrelistenOutput(fix: boolean): Promise<OutputCheckRow[]> {
+    if (fix && !localStorage.getItem(PRELISTEN_BACKUP)) {
+      const saved: { cat: string; name: string; value: string | null }[] = [];
+      for (const p of PRELISTEN_PARAMS.filter((x) => x.fix)) saved.push({ cat: p.cat, name: p.name, value: await this.readParam(p.cat, p.name) });
+      localStorage.setItem(PRELISTEN_BACKUP, JSON.stringify(saved));
+    }
+    const rows: OutputCheckRow[] = [];
+    for (const p of PRELISTEN_PARAMS) {
+      const same = (v: string | null) => (p.test ? p.test(v ?? "") : (v ?? "").toLowerCase() === p.expected.toLowerCase());
+      let actual = await this.readParam(p.cat, p.name);
+      let fixed = false;
+      if (fix && p.fix && !same(actual)) {
+        try {
+          await this.obs.call("SetProfileParameter", { parameterCategory: p.cat, parameterName: p.name, parameterValue: p.expected });
+          actual = await this.readParam(p.cat, p.name);
+          fixed = same(actual);
+        } catch {
+          /* reported below as not ok */
+        }
+      }
+      rows.push({ label: p.label, expected: p.expected, actual: actual ?? "(not set)", ok: same(actual), fixed, manual: !p.fix });
+    }
+    return rows;
+  }
+
+  async restorePrelistenOutput(): Promise<OutputCheckRow[]> {
+    const raw = localStorage.getItem(PRELISTEN_BACKUP);
+    if (raw) {
+      const saved = JSON.parse(raw) as { cat: string; name: string; value: string | null }[];
+      for (const p of saved) {
+        await this.obs.call("SetProfileParameter", { parameterCategory: p.cat, parameterName: p.name, parameterValue: p.value as string }).catch(() => {});
+      }
+      localStorage.removeItem(PRELISTEN_BACKUP);
+    }
+    return this.checkPrelistenOutput(false);
   }
 
   async setStreaming(on: boolean) {

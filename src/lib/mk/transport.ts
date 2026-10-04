@@ -2,7 +2,7 @@
 // mixer backend. OBS WebSocket 5.x and Demo Mode both implement it, and a
 // future hardware bridge can too.
 import type { FxRect } from "./fx";
-import type { AudioChannel, ConnectionStatus, EqValues, MonitorType } from "./types";
+import type { AudioChannel, ConnectionStatus, EqValues, MonitorType, OutputCheckRow } from "./types";
 
 export type TransportEvent =
   | { type: "status"; status: ConnectionStatus; message?: string }
@@ -71,6 +71,12 @@ export interface Transport {
    * final mix). `threshold` is the ceiling in dBFS.
    */
   setLimiter(inputs: string[], on: boolean, threshold: number): Promise<void>;
+  /**
+   * Check (and with `fix`, repair) the OBS Recording output that feeds pre-listen: Custom FFmpeg -> rtsp://127.0.0.1:8554/mk,
+   * audio Track 2 only. The first fix saves the old values so restorePrelistenOutput can put them back.
+   */
+  checkPrelistenOutput(fix: boolean): Promise<OutputCheckRow[]>;
+  restorePrelistenOutput(): Promise<OutputCheckRow[]>;
   setStreaming(on: boolean): Promise<void>;
   setRecording(on: boolean): Promise<void>;
   setRecordPaused(paused: boolean): Promise<void>;

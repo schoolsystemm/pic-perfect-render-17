@@ -1,6 +1,6 @@
 // Demo Mode: full switcher behaviour with no OBS present.
 import { EventBus, type Transport } from "./transport";
-import type { AudioChannel, EqValues, MonitorType } from "./types";
+import type { AudioChannel, EqValues, MonitorType, OutputCheckRow } from "./types";
 
 const DEMO_SCENES = [
   "Camera 1 Wide",
@@ -124,6 +124,14 @@ export class DemoTransport implements Transport {
     const c = this.channels.find((x) => x.name === name);
     if (c) c.eq = eq;
     this.bus.emit({ type: "audioChannel", name, eq });
+  }
+
+  async checkPrelistenOutput(): Promise<OutputCheckRow[]> {
+    return [{ label: "Demo mode: no OBS output to check", expected: "-", actual: "-", ok: true, fixed: false, manual: false }];
+  }
+
+  async restorePrelistenOutput(): Promise<OutputCheckRow[]> {
+    return this.checkPrelistenOutput();
   }
 
   async setLimiter(_inputs: string[], on: boolean, threshold: number) {
