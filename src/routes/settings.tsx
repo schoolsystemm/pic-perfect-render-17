@@ -6,6 +6,7 @@ import { LiveFxSettings } from "@/components/mk/live-fx-settings";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { GFX_SCENE } from "@/lib/mk/graphics";
 import { resolveListenUrl } from "@/lib/mk/listen";
+import type { OutputCheckRow } from "@/lib/mk/types";
 import {
   CAM_COUNT,
   DSK_COUNT,
@@ -39,6 +40,51 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="mk-label mb-3 text-foreground">{title}</h2>
       <div className="grid gap-3">{children}</div>
     </section>
+  );
+}
+
+
+/** Check / fix / restore the OBS Recording output that feeds pre-listen. */
+function PrelistenOutput({ connected }: { connected: boolean }) {
+  const [rows, setRows] = useState<OutputCheckRow[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async (job: () => Promise<OutputCheckRow[] | null>) => {
+    setBusy(true);
+    setRows(await job());
+    setBusy(false);
+  };
+  const btn = "mk-button h-9 rounded-sm px-3 text-xs";
+  return (
+    <div className="grid gap-2 rounded-sm border border-border p-2">
+      <span className="mk-label">OBS pre-listen output (Recording tab to MediaMTX)</span>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={!connected || busy} className={btn} onClick={() => void run(() => engine.checkPrelistenOutput(false))}>
+          CHECK
+        </button>
+        <button type="button" disabled={!connected || busy} className={`${btn} mk-lit-amber`} onClick={() => void run(() => engine.checkPrelistenOutput(true))}>
+          SET UP IN OBS
+        </button>
+        <button type="button" disabled={!connected || busy} className={btn} onClick={() => void run(() => engine.restorePrelistenOutput())}>
+          RESTORE MY OLD SETTINGS
+        </button>
+      </div>
+      <p className="font-mono text-[10px] text-muted-foreground">
+        SET UP IN OBS writes: Recording = Custom Output (FFmpeg) to rtsp://127.0.0.1:8554/mk, audio Track 2 only. That uses
+        OBS&apos;s Recording slot, so normal file recording stops while it is set. RESTORE puts back what was there before.
+        Press REC in OBS (or in MK) to start the feed.
+      </p>
+      {!connected && <p className="font-mono text-[10px] text-amber">Connect to OBS first.</p>}
+      {rows && (
+        <ul className="grid gap-0.5 font-mono text-[10px]">
+          {rows.map((r) => (
+            <li key={r.label} className={r.ok ? "text-preview" : "text-amber"}>
+              {r.ok ? (r.fixed ? "FIXED" : "OK   ") : r.manual ? "DO IN OBS" : "WRONG"} · {r.label}
+              {!r.ok && ` (now: ${r.actual}, want: ${r.expected})`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -315,6 +361,28 @@ function SettingsPage() {
             Leave empty to use the OBS host with port 8889. Needs the free MediaMTX server running on the OBS PC and OBS
             sending audio to it — see audio-bridge/SETUP.md. Then press Listen at the top of the switcher.
           </p>
+          <button
+            type="button"
+            aria-pressed={config.listenRemote}
+            className={`mk-button h-10 w-fit rounded-sm px-4 text-sm ${config.listenRemote ? "mk-lit-preview" : ""}`}
+            onClick={() => engine.setListen({ listenRemote: !config.listenRemote })}
+          >
+            REMOTE LISTENING {config.listenRemote ? "ON" : "OFF"}
+          </button>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            ON = also connect across routers and the internet (adds a STUN server). The address must be https when this page
+            is https (phones block http): see audio-bridge/REMOTE.md.
+          </p>
+          <label className="grid gap-1">
+            <span className="mk-label">Extra ICE servers (optional, separated by ;)</span>
+            <input
+              className={fieldClass}
+              value={config.listenIce}
+              placeholder="turn:host:3478|user|password"
+              onChange={(e) => engine.setListen({ listenIce: e.target.value })}
+            />
+          </label>
+          <PrelistenOutput connected={state.status === "connected"} />
         </Section>
 
         <Section title="Monitors (real video)">
