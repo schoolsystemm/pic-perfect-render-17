@@ -1,7 +1,7 @@
 @echo off
 rem MK VISION one-click start: MediaMTX (pre-listen server), then OBS, then the MK page.
 rem Edit the three paths below once.
-set MEDIAMTX_DIR=C:\Users\Administrator\Downloads\mediamtx_v1.21.1_windows_amd64
+set MEDIAMTX_DIR=C:\Users\HomePC\Downloads\mediamtx_v1.21.1_windows_amd64
 set OBS_DIR=C:\Program Files\obs-studio\bin\64bit
 set MK_URL=https://pic-perfect-render-17.lovable.app
 
