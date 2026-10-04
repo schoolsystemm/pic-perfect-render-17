@@ -33,7 +33,7 @@ export function ListenControl({ config }: { config: MkConfig }) {
       {message && <span className="hidden font-mono text-[9px] text-amber xl:block">{message}</span>}
       <button
         type="button"
-        onClick={() => (on ? listener.stop() : void listener.start(url, config.listenVolume))}
+        onClick={() => (on ? listener.stop() : void listener.start(url, config.listenVolume, { remote: config.listenRemote, extra: config.listenIce }))}
         aria-pressed={on}
         className={cn("mk-button flex h-7 items-center gap-1 rounded-[3px] px-2 text-[9px] tracking-[0.12em]", status === "live" && "mk-lit-program")}
       >
