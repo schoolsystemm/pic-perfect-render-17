@@ -24,6 +24,21 @@ export function resolveListenUrl(saved: string, obsHost: string): string {
   return obsHost ? `http://${obsHost}:8889/mk/whep` : "";
 }
 
+/** True when an https page would be blocked from calling this address (mixed content). localhost is exempt. */
+export function isMixedContentBlocked(url: string): boolean {
+  if (typeof location === "undefined" || location.protocol !== "https:") return false;
+  if (!/^http:\/\//i.test(url.trim())) return false;
+  try {
+    const h = new URL(url.trim()).hostname;
+    return !(h === "localhost" || h === "127.0.0.1" || h === "[::1]");
+  } catch {
+    return true;
+  }
+}
+
+export const MIXED_CONTENT_MESSAGE =
+  "Blocked: this page is https, the audio address is http. Run MK-Remote.bat on the OBS PC and paste the https://…ts.net:8443/mk/whep address in Settings > Listen";
+
 export interface IceOptions {
   /** Add a public STUN server so it also connects across routers / the internet. */
   remote: boolean;
@@ -71,6 +86,11 @@ class Listener {
   async start(url: string, volume: number, ice?: IceOptions) {
     if (!url) {
       this.set({ status: "error", message: "No audio address — set it in Settings → Listen" });
+      return;
+    }
+    if (isMixedContentBlocked(url)) {
+      this.wanted = false;
+      this.set({ status: "error", message: MIXED_CONTENT_MESSAGE });
       return;
     }
     this.wanted = true;
@@ -243,10 +263,9 @@ class Listener {
       if (!res.ok) return this.fail(`Audio server said ${res.status}`);
       await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
     } catch {
-      const blocked = typeof location !== "undefined" && location.protocol === "https:" && this.url.startsWith("http://");
       this.fail(
-        blocked
-          ? "Blocked: this page is https but the audio address is http. Use an https address (audio-bridge/REMOTE.md)"
+        isMixedContentBlocked(this.url)
+          ? MIXED_CONTENT_MESSAGE
           : "Can't reach the audio server — is MediaMTX running?",
       );
     }
