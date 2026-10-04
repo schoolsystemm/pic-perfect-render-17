@@ -38,6 +38,7 @@ const PRELISTEN_PARAMS: { cat: string; name: string; label: string; expected: st
   { cat: "AdvOut", name: "FFURL", label: "URL", expected: "rtsp://127.0.0.1:8554/mk", fix: true },
   { cat: "AdvOut", name: "FFFormat", label: "Container format", expected: "rtsp", fix: true },
   { cat: "AdvOut", name: "FFAudioMixes", label: "Audio track: 2 only", expected: "2", fix: true, test: (v) => Number(v) === 2 },
+  { cat: "AdvOut", name: "FFMCustom", label: "Muxer settings: rtsp_transport=tcp", expected: "rtsp_transport=tcp", fix: true, test: (v) => /rtsp_transport=tcp/i.test(v) },
   { cat: "Output", name: "Mode", label: "Output mode: Advanced (OBS restart needed if changed)", expected: "Advanced", fix: false },
   { cat: "AdvOut", name: "FFAEncoder", label: "Audio encoder: libopus", expected: "libopus", fix: false, test: (v) => /opus/i.test(v) },
   { cat: "AdvOut", name: "FFVEncoderId", label: "Video encoder: Disable Encoder", expected: "0", fix: false, test: (v) => v === "" || v === "0" || v === "-1" },
