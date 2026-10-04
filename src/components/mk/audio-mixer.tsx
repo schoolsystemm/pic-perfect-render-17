@@ -1,10 +1,10 @@
-import { Eye, EyeOff, Headphones, Volume2, VolumeX } from "lucide-react";
+import { Eye, EyeOff, Volume2, VolumeX } from "lucide-react";
 import { useState } from "react";
 
 import { Fader } from "@/components/mk/fader";
 import { GrMeter, Meter, MeterScale } from "@/components/mk/meter";
 import { dbToPos, FADER_TICKS, fmtDb, powerSum } from "@/lib/mk/audio-math";
-import { LIMITER_MAX, LIMITER_MIN, type AudioChannel, type LimiterConfig } from "@/lib/mk/types";
+import { LIMITER_MAX, LIMITER_MIN, type AudioChannel, type LimiterConfig, type MonitorMode } from "@/lib/mk/types";
 import { cn } from "@/lib/utils";
 
 export interface AudioMixerProps {
@@ -20,8 +20,6 @@ export interface AudioMixerProps {
   onMute: (name: string) => void;
   onMonitor: (name: string) => void;
   onStream: (name: string) => void;
-  onPre: (name: string) => void;
-  onHearFinal: (on: boolean) => void;
   onAfv: (on: boolean) => void;
   onLimiter: (patch: Partial<LimiterConfig>) => void;
   onMuteOut: () => void;
@@ -34,12 +32,18 @@ function Key({
   tone,
   title,
   onClick,
+  armed,
+  dim,
 }: {
   label: string;
   on: boolean;
   tone: "program" | "preview" | "amber";
   title: string;
   onClick: () => void;
+  /** Waiting to be picked (SOLO mode, not soloed yet). */
+  armed?: boolean;
+  /** Not usable right now. */
+  dim?: boolean;
 }) {
   return (
     <button
@@ -51,6 +55,8 @@ function Key({
       className={cn(
         "mk-button h-[18px] min-w-0 flex-1 rounded-[3px] px-0 text-[8px] tracking-normal",
         on && (tone === "program" ? "mk-lit-program" : tone === "preview" ? "mk-lit-preview" : "mk-lit-amber"),
+        armed && !on && "border-preview/70 text-preview",
+        dim && !on && "opacity-40",
       )}
     >
       {label}
@@ -73,6 +79,12 @@ function FaderScale() {
 
 /** Extra props only the strip view needs (the Master does not use them). */
 export interface MixerViewProps {
+  /** Monitor section state: SOLO keys only work in SOLO mode. */
+  monitorMode: MonitorMode;
+  solo: string[];
+  select: string | null;
+  onSolo: (name: string) => void;
+  onSelect: (name: string) => void;
   /** Names of inputs hidden from the strips. */
   hidden: string[];
   onHide: (name: string) => void;
@@ -92,12 +104,25 @@ function Strip({
   cam: number | null;
   props: AudioMixerProps & MixerViewProps;
 }) {
+  const inSolo = props.monitorMode === "solo";
+  const soloed = props.solo.includes(c.name);
+  const selected = soloed && props.select === c.name;
   return (
-    <div className="flex w-[4.6rem] shrink-0 flex-col items-center gap-1 rounded-[4px] border border-white/5 bg-black/20 px-1 py-1">
+    <div
+      className={cn(
+        "flex w-[4.6rem] shrink-0 flex-col items-center gap-1 rounded-[4px] border bg-black/20 px-1 py-1",
+        selected ? "border-preview shadow-[0_0_8px_oklch(0.72_0.21_148/45%)]" : soloed ? "border-preview/50" : "border-white/5",
+      )}
+    >
       <div className="flex w-full items-center gap-0.5">
-        <span className="min-w-0 flex-1 truncate text-center text-[10px] leading-none font-bold text-foreground" title={c.name}>
+        <button
+          type="button"
+          onClick={() => soloed && props.onSelect(c.name)}
+          title={soloed ? `Adjust ${c.name} in the Monitor section` : c.name}
+          className="min-w-0 flex-1 truncate text-center text-[10px] leading-none font-bold text-foreground"
+        >
           {c.name}
-        </span>
+        </button>
         <button
           type="button"
           onClick={() => props.onHide(c.name)}
@@ -131,7 +156,15 @@ function Strip({
 
       <div className="flex w-full gap-[3px]">
         <Key label="MN" on={c.stream} tone="program" title="On the FINAL mix (YouTube + recording)" onClick={() => props.onStream(c.name)} />
-        <Key label="PRE" on={c.pre} tone="preview" title="In the pre-listen mix (the Listen button)" onClick={() => props.onPre(c.name)} />
+        <Key
+          label="SOLO"
+          on={soloed}
+          armed={inSolo}
+          dim={!inSolo}
+          tone="preview"
+          title={inSolo ? "Hear this input alone in your headphones (nothing changes on air)" : "Press SOLO in the Monitor section first"}
+          onClick={() => props.onSolo(c.name)}
+        />
         <Key label="PC" on={c.monitor !== "none"} tone="amber" title="Also on the OBS PC's own headphones" onClick={() => props.onMonitor(c.name)} />
       </div>
     </div>
@@ -145,7 +178,6 @@ export function Master(props: AudioMixerProps & { className?: string }) {
   const live = onMain.filter((c) => !c.muted);
   const mix = powerSum(live.map((c) => levels[c.name] ?? -100));
   const level = masterMuted ? -100 : mix;
-  const hearFinal = onMain.length > 0 && onMain.every((c) => c.pre);
 
   // OBS cannot report gain reduction, so estimate it from how close the mix is to the ceiling.
   const engaged = limiter.on && !masterMuted && mix >= limiter.threshold - 0.6;
@@ -207,17 +239,6 @@ export function Master(props: AudioMixerProps & { className?: string }) {
         />
         <span className="w-6 shrink-0 text-right font-mono text-[9px] text-amber">{limiter.threshold}</span>
       </div>
-
-      <button
-        type="button"
-        onClick={() => props.onHearFinal(!hearFinal)}
-        aria-pressed={hearFinal}
-        title="Put every MN input in the pre-listen mix too, so Listen plays the whole final mix"
-        className={cn("mk-button flex h-6 w-full items-center justify-center gap-1 rounded-[3px] text-[9px]", hearFinal && "mk-lit-preview")}
-      >
-        <Headphones className="h-3 w-3" />
-        HEAR
-      </button>
     </div>
   );
 }
@@ -229,7 +250,7 @@ export function AudioMixer(props: AudioMixerProps & MixerViewProps) {
     <section className="mk-panel flex h-full min-h-0 min-w-0 flex-col rounded-md p-1.5">
       <header className="mb-1 flex items-center gap-2">
         <span className="mk-label text-foreground">Audio</span>
-        <span className="mk-label hidden truncate text-[8px] 2xl:block">MN = final out · PRE = pre-listen · PC = OBS PC headphones</span>
+        <span className="mk-label hidden truncate text-[8px] 2xl:block">MN = on air · SOLO = hear alone · PC = OBS PC headphones</span>
         <button
           type="button"
           onClick={() => onAfv(!afv)}
