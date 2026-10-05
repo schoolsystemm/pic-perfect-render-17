@@ -5,6 +5,7 @@ set MEDIAMTX_DIR=C:\Users\HomePC\Downloads\mediamtx_v1.21.1_windows_amd64
 set OBS_DIR=C:\Program Files\obs-studio\bin\64bit
 set MK_URL=https://pic-perfect-render-17.lovable.app
 
+if exist "%~dp0mediamtx-dir.txt" set /p MEDIAMTX_DIR=<"%~dp0mediamtx-dir.txt"
 set CFG=%~dp0mediamtx.yml
 if exist "%~dp0mediamtx-remote.yml" set CFG=%~dp0mediamtx-remote.yml
 

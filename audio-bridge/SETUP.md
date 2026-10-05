@@ -1,3 +1,16 @@
+# FASTEST WAY (no Recording used): Aitum Multistream + one script
+
+1. On the OBS PC run `audio-bridge\\MK-Setup.bat` (right-click > Run is fine, it asks for admin once). It installs ffmpeg and
+   MediaMTX if missing, opens the firewall for your local network, writes the config and starts the server.
+2. One time in Aitum Multistream: add output > custom RTMP, server `rtmp://127.0.0.1:1935`, key `raw`, audio **Track 2 only**.
+   Start it. Aitum remembers it.
+3. Any phone or PC on the same network: open MK > Settings > Listen. Each step shows OK / TO DO. Then press Listen.
+
+Normal OBS Recording and Stream stay on Track 1 and are never touched. The older Recording-slot method below still works
+but is no longer needed.
+
+---
+
 # MK audio: MAIN and SOLO monitor (console style)
 
 Every audio input is a strip with: **MN** (red, on air: OBS Track 1 = YouTube + recording), **SOLO** (green),

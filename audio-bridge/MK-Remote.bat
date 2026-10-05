@@ -12,9 +12,15 @@ if "%TSIP%"=="" (
 )
 
 (
+echo api: yes
+echo apiAddress: :9997
+echo apiAllowOrigin: '*'
 echo webrtcAdditionalHosts: [%TSIP%]
 echo webrtcLocalTCPAddress: :8189
 echo paths:
+echo   raw:
+echo     runOnAvailable: ffmpeg -i rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH -vn -c:a libopus -b:a 128k -ar 48000 -ac 2 -f rtsp rtsp://127.0.0.1:$RTSP_PORT/mk
+echo     runOnAvailableRestart: yes
 echo   mk:
 ) > "%~dp0mediamtx-remote.yml"
 
