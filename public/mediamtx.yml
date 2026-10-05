@@ -1,8 +1,11 @@
 # MK VISION pre-listen WITHOUT touching OBS Recording (MediaMTX v1.21+).
 # Aitum Multistream pushes Track 2 (AAC) to path "raw" over RTMP; ffmpeg turns it into Opus on path "mk";
-# phones and laptops play "mk" over WebRTC. Needs ffmpeg.exe on the PATH.
-# If a phone connects but stays silent, uncomment and set the OBS PC LAN IP:
-# webrtcAdditionalHosts: [192.168.1.103]
+# phones and laptops on the same network play "mk" over WebRTC. Needs ffmpeg on the PATH.
+# MK-Setup.bat writes this file for you (including your LAN address); you normally never edit it.
+api: yes
+apiAddress: :9997
+apiAllowOrigin: '*'
+# webrtcAdditionalHosts: [192.168.0.100]
 paths:
   raw:
     runOnAvailable: ffmpeg -i rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH -vn -c:a libopus -b:a 128k -ar 48000 -ac 2 -f rtsp rtsp://127.0.0.1:$RTSP_PORT/mk

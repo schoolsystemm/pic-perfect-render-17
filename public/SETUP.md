@@ -1,13 +1,34 @@
-# Two mixes: MAIN (final out) and PRE (pre-listen)
+# FASTEST WAY (no Recording used): Aitum Multistream + one script
 
-Every audio input in the app (mic, desktop, browser sources, sounds) is an equal strip with:
-- **MAIN** → the input goes to the FINAL mix = OBS Track 1 = what YouTube and the recording get.
-- **PRE** → the input goes to the PRE-LISTEN mix = OBS Track 2 = what the phone's Listen button plays.
-- **PC** → also plays on the OBS PC's own headphones (optional).
-The **MASTER** strip on the right shows the final output level. **HEAR FINAL** turns PRE on for
-everything that is on MAIN, so Listen plays the whole final mix; turn it off to pre-listen only what you pick.
+1. On the OBS PC run `audio-bridge\\MK-Setup.bat` (right-click > Run is fine, it asks for admin once). It installs ffmpeg and
+   MediaMTX if missing, opens the firewall for your local network, writes the config and starts the server.
+2. One time in Aitum Multistream: add output > custom RTMP, server `rtmp://127.0.0.1:1935`, key `raw`, audio **Track 2 only**.
+   Start it. Aitum remembers it.
+3. Any phone or PC on the same network: open MK > Settings > Listen. Each step shows OK / TO DO. Then press Listen.
 
-Keep OBS Stream and Recording on **Track 1 only** (Settings → Output → Streaming/Recording → Audio Track 1).
+Normal OBS Recording and Stream stay on Track 1 and are never touched. The older Recording-slot method below still works
+but is no longer needed.
+
+---
+
+# MK audio: MAIN and SOLO monitor (console style)
+
+Every audio input is a strip with: **MN** (red, on air: OBS Track 1 = YouTube + recording), **SOLO** (green),
+**PC** (amber, OBS PC headphones), MUTE and a fader.
+
+The **Monitor** section (next to the mixer) is what your phone / laptop headphones play (OBS Track 2):
+- **MAIN** (red, default): headphones follow the final mix. Pressing MAIN also drops any change you did not TAKE.
+- **SOLO** (green): arms the SOLO keys on the strips (green outline). Press SOLO on one or more strips: you hear only
+  those, before their fader, and nothing changes on air. An off-air input that is muted or faded down is lifted
+  while soloed and put back after.
+- **GAIN / HIGH / MID / LOW** knobs act on the input shown (click a name in the Monitor section to pick it).
+  While soloed, a change is STAGED: amber, heard only in your headphones (browser preview EQ). **TAKE** writes it to
+  OBS (MK Gain + MK EQ filters on the input); **ALL** takes every staged input. **COPY** / **PASTE** move gain + EQ
+  between inputs (paste lands as staged on every soloed input).
+- Outside SOLO mode the knobs change the input directly (on air).
+- On connect MK puts Track 2 in step with the mode automatically (MAIN: every MN input is on Track 2).
+
+Keep OBS Stream and Recording on **Track 1 only**.
 
 # Hear OBS audio on your phone / laptop (MK VISION → Listen)
 
@@ -19,17 +40,17 @@ controller plays it back.
 1. Download MediaMTX (free, one file) from https://github.com/bluenviron/mediamtx/releases
 2. Put `mediamtx.yml` from this folder next to it (or just run it without a file — defaults work).
 3. Run `mediamtx` (Windows: double-click `mediamtx.exe`). Leave the window open.
-4. Windows Firewall: allow it on private networks (TCP 8889, UDP 8189, UDP 8890).
+4. Windows Firewall: allow it on private networks (TCP 8889, TCP 8554, UDP 8189).
 
 ## 2. In OBS — send audio-only to it
 Settings → Output → Output Mode: **Advanced** → **Recording** tab:
 - Type: **Custom Output (FFmpeg)**
 - FFmpeg Output Type: **Output to URL**
-- File path or URL: `srt://127.0.0.1:8890?streamid=publish:mk&pkt_size=1316`
-- Container Format: **mpegts**
+- File path or URL: `rtsp://127.0.0.1:8554/mk`
+- Container Format: **rtsp**
 - Video Encoder: **Disable** (audio only, costs no CPU)
 - Audio Encoder: **libopus** (or "opus"), bitrate 128
-- Audio Track: **2** (the PRE-LISTEN mix — NOT track 1, which is your final mix)
+- Audio Track: **2 only** (untick 1; the monitor mix, NOT your final mix)
 
 Then press **Start Recording** in OBS. The pre-listen feed flows while it is running.
 
@@ -57,3 +78,11 @@ Then press **Start Recording** in OBS. The pre-listen feed flows while it is run
 Add audio files on the **Sounds** page. **CUE** (headphones button) plays on
 this phone/laptop only — OBS never hears it. **AIR** plays it through OBS
 (clips up to 2 MB). Files stay in this browser. This does NOT need MediaMTX.
+
+---
+# Set up the OBS output from MK
+MK VISION > Settings > Listen > **SET UP IN OBS** writes the Recording output for you (Custom FFmpeg to
+`rtsp://127.0.0.1:8554/mk`, audio Track 2 only) and reports every line. **CHECK** only reads. **RESTORE MY OLD SETTINGS**
+puts your previous Recording settings back. Three things MK cannot change and will tell you about: Output Mode =
+Advanced, audio encoder = libopus, video encoder = Disable Encoder (set those once in OBS). It uses the Recording slot:
+no file recording while it is set. For remote listening see `REMOTE.md`.
