@@ -697,8 +697,15 @@ export class SwitcherEngine {
   }
 
   /** Put the right inputs on the pre-listen track, and lift soloed inputs that are off air but faded down. */
+  private parked = new Set<string>();
+  private parkSwept = false;
+
   private async routeMonitor() {
     if (!this.transport) return;
+    if (!this.parkSwept) {
+      this.parkSwept = true;
+      await this.transport.clearParkedInputs?.().catch(() => {});
+    }
     const { mode, solo } = this.state.monitor;
     for (const c of [...this.state.audio]) {
       const soloed = mode === "solo" && solo.includes(c.name);
@@ -708,6 +715,12 @@ export class SwitcherEngine {
         await this.transport.setInputPre(c.name, want).catch(() => {});
       }
       await this.liftFor(c.name, soloed && !c.stream);
+      const park = soloed && !c.stream;
+      if (park !== this.parked.has(c.name)) {
+        if (park) this.parked.add(c.name);
+        else this.parked.delete(c.name);
+        await this.transport.setInputActive?.(c.name, park).catch(() => {});
+      }
     }
   }
 

@@ -64,6 +64,10 @@ export interface Transport {
   setInputStream(name: string, enabled: boolean): Promise<void>;
   /** Send an input to the pre-listen mix (audio track 2). */
   setInputPre(name: string, enabled: boolean): Promise<void>;
+  /** Make an off-air input audible to the pre-listen track (OBS ignores inactive sources); `false` undoes it. */
+  setInputActive?(name: string, on: boolean): Promise<void>;
+  /** Remove parked items left by an earlier session. */
+  clearParkedInputs?(): Promise<void>;
   /** Set an input's gain + 3-band EQ (the MK Gain / MK EQ filters). */
   setInputEq(name: string, eq: EqValues): Promise<void>;
   /**

@@ -30,6 +30,9 @@ const LIMITER_FILTER = "MK Limiter";
 const GAIN_FILTER = "MK Gain";
 const EQ_FILTER = "MK EQ";
 
+/** Off-canvas position that marks an item MK parked only to make a soloed input audible. */
+const PARK = -20000;
+
 const PRELISTEN_BACKUP = "mk.prelistenBackup";
 /** What the pre-listen output must look like. `fix` = MK may write it; otherwise it is a manual OBS setting. */
 const PRELISTEN_PARAMS: { cat: string; name: string; label: string; expected: string; fix: boolean; test?: (v: string) => boolean }[] = [
@@ -327,6 +330,64 @@ export class ObsTransport implements Transport {
       inputName: name,
       inputAudioTracks: { "1": enabled },
     });
+  }
+
+  /**
+   * OBS only feeds a track from ACTIVE sources (global devices, or visible in the scene on program). To pre-listen an
+   * input that sits in a scene that is not on air, park it (visible, tiny, far off canvas, bottom layer) in every
+   * non-MK scene while it is soloed, and take it out again afterwards. Nothing is seen on air; Track 1 is untouched.
+   */
+  async setInputActive(name: string, on: boolean) {
+    const { scenes } = await this.obs.call("GetSceneList");
+    for (const s of scenes as Array<Record<string, unknown>>) {
+      const sceneName = String(s["sceneName"]);
+      if (sceneName.startsWith("MK ")) continue;
+      try {
+        let id: number | null = null;
+        try {
+          id = (await this.obs.call("GetSceneItemId", { sceneName, sourceName: name })).sceneItemId;
+        } catch {
+          /* not in this scene */
+        }
+        if (on) {
+          if (id !== null) continue; // really in this scene already
+          const made = await this.obs.call("CreateSceneItem", { sceneName, sourceName: name, sceneItemEnabled: true });
+          await this.obs.call("SetSceneItemTransform", {
+            sceneName,
+            sceneItemId: made.sceneItemId,
+            sceneItemTransform: { positionX: PARK, positionY: PARK, scaleX: 0.01, scaleY: 0.01 },
+          });
+          await this.obs.call("SetSceneItemIndex", { sceneName, sceneItemId: made.sceneItemId, sceneItemIndex: 0 });
+        } else if (id !== null) {
+          const { sceneItemTransform } = await this.obs.call("GetSceneItemTransform", { sceneName, sceneItemId: id });
+          if (Number((sceneItemTransform as Record<string, unknown>)["positionX"]) === PARK) {
+            await this.obs.call("RemoveSceneItem", { sceneName, sceneItemId: id });
+          }
+        }
+      } catch {
+        /* scene busy or locked: skip it */
+      }
+    }
+  }
+
+  /** Remove every parked item left behind by an earlier page load. */
+  async clearParkedInputs() {
+    const { scenes } = await this.obs.call("GetSceneList");
+    for (const s of scenes as Array<Record<string, unknown>>) {
+      const sceneName = String(s["sceneName"]);
+      if (sceneName.startsWith("MK ")) continue;
+      try {
+        const { sceneItems } = await this.obs.call("GetSceneItemList", { sceneName });
+        for (const it of sceneItems as Array<Record<string, unknown>>) {
+          const t = it["sceneItemTransform"] as Record<string, unknown> | undefined;
+          if (t && Number(t["positionX"]) === PARK && Number(t["positionY"]) === PARK) {
+            await this.obs.call("RemoveSceneItem", { sceneName, sceneItemId: Number(it["sceneItemId"]) });
+          }
+        }
+      } catch {
+        /* skip */
+      }
+    }
   }
 
   async setInputPre(name: string, enabled: boolean) {
