@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { LiveFxSettings } from "@/components/mk/live-fx-settings";
 import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { GFX_SCENE } from "@/lib/mk/graphics";
+import { checkBridge, type BridgeReport } from "@/lib/mk/bridge";
 import { resolveListenUrl } from "@/lib/mk/listen";
 import type { OutputCheckRow } from "@/lib/mk/types";
 import {
@@ -44,7 +45,52 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 
-/** Check / fix / restore the OBS Recording output that feeds pre-listen. */
+/** Pre-listen bridge status (no Recording involved): MediaMTX + Aitum output + ffmpeg, checked from this device. */
+function PrelistenBridge({ saved, host }: { saved: string; host: string }) {
+  const [rep, setRep] = useState<BridgeReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    setRep(await checkBridge(saved, host));
+    setBusy(false);
+  };
+  useEffect(() => {
+    void run();
+    const t = setInterval(() => void checkBridge(saved, host).then(setRep), 4000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved, host]);
+  const btn = "mk-button h-9 rounded-sm px-3 text-xs";
+  return (
+    <div className="grid gap-2 rounded-sm border border-border p-2">
+      <span className="mk-label">Pre-listen link (Aitum Multistream: Recording is not touched)</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" disabled={busy} className={`${btn} mk-lit-amber`} onClick={() => void run()}>
+          CHECK NOW
+        </button>
+        {rep && <span className={`font-mono text-[10px] ${rep.ready ? "text-preview" : "text-amber"}`}>{rep.next}</span>}
+      </div>
+      {rep && (
+        <ul className="grid gap-0.5 font-mono text-[10px]">
+          {rep.rows.map((r) => (
+            <li key={r.label} className={r.ok ? "text-preview" : "text-amber"}>
+              {r.ok ? "OK    " : "TO DO "} · {r.label}
+              {!r.ok && r.fix ? ` — ${r.fix}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="font-mono text-[10px] text-muted-foreground">
+        One time in Aitum Multistream (OBS PC): add output, custom RTMP, server rtmp://127.0.0.1:1935, key raw, audio Track 2
+        only, share the main video encoder. Saved by Aitum; from then on just start it. On the OBS PC run
+        audio-bridge\MK-Setup.bat once: it installs ffmpeg + MediaMTX, opens the firewall and starts the server. Any phone or PC
+        on the same network then opens MK and presses Listen.
+      </p>
+    </div>
+  );
+}
+
+/** Check / fix / restore the OBS Recording output that feeds pre-listen (old way). */
 function PrelistenOutput({ connected }: { connected: boolean }) {
   const [rows, setRows] = useState<OutputCheckRow[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -382,7 +428,13 @@ function SettingsPage() {
               onChange={(e) => engine.setListen({ listenIce: e.target.value })}
             />
           </label>
-          <PrelistenOutput connected={state.status === "connected"} />
+          <PrelistenBridge saved={config.listenUrl} host={config.host} />
+          <details className="rounded-sm border border-border p-2">
+            <summary className="mk-label cursor-pointer">Old way: use OBS Recording (not recommended, blocks file recording)</summary>
+            <div className="mt-2">
+              <PrelistenOutput connected={state.status === "connected"} />
+            </div>
+          </details>
         </Section>
 
         <Section title="Monitors (real video)">
