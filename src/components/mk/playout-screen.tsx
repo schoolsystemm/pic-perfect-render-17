@@ -20,9 +20,11 @@ import {
   schedule,
   secOfDay,
   totalSecs,
+  PLAYOUT_SCENE,
   usePlayout,
 } from "@/lib/mk/playout";
-import { useSwitcher } from "@/lib/mk/use-switcher";
+import type { PlayoutStatus } from "@/lib/mk/transport";
+import { engine, useSwitcher } from "@/lib/mk/use-switcher";
 import { cn } from "@/lib/utils";
 
 const field =
@@ -40,6 +42,8 @@ export function PlayoutScreen() {
     return () => clearInterval(id);
   }, []);
 
+  const [shot, setShot] = useState<string | null>(null);
+  const [obs, setObs] = useState<PlayoutStatus | null>(null);
   const items = plan.items;
   const running = run.idx >= 0 && run.idx < items.length;
   const finished = items.length > 0 && run.idx >= items.length;
@@ -49,6 +53,31 @@ export function PlayoutScreen() {
   const endAt = slots.length ? slots[slots.length - 1]!.end : 0;
   const mark = Math.ceil(endAt / 1800) * 1800;
   const gap = mark - endAt;
+
+  useEffect(() => {
+    if (!running || state.status !== "connected") {
+      setShot(null);
+      setObs(null);
+      return;
+    }
+    let alive = true;
+    const poll = async () => {
+      const [img, st] = await Promise.all([
+        engine.getScreenshot(PLAYOUT_SCENE),
+        engine.playoutStatus(),
+      ]);
+      if (alive) {
+        setShot(img);
+        setObs(st);
+      }
+    };
+    void poll();
+    const id = setInterval(() => void poll(), 1000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [running, state.status]);
 
   const cur = running ? items[run.idx]! : null;
   const elapsed = running ? ((run.pausedAt ?? now) - run.t0) / 1000 : 0;
@@ -124,6 +153,14 @@ export function PlayoutScreen() {
               onChange={(e) => playout.setOpt({ ret: e.target.checked })}
             />
             Cut back to the previous scene when the list ends or stops
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={plan.toRundown}
+              onChange={(e) => playout.setOpt({ toRundown: e.target.checked })}
+            />
+            Show the videos in the Rundown (Tools &gt; Rundown) and keep it in step
           </label>
         </div>
         {!plan.folder.trim() && items.length > 0 && (
@@ -274,8 +311,21 @@ export function PlayoutScreen() {
               )}
             >
               <span className="font-mono text-xs">{i + 1}</span>
-              <span className="min-w-0 truncate text-sm" title={pathOf(it)}>
-                {it.name}
+              <span className="flex min-w-0 items-center gap-2">
+                {it.thumb ? (
+                  <img
+                    src={it.thumb}
+                    alt=""
+                    className="h-9 w-16 shrink-0 rounded-sm object-cover"
+                  />
+                ) : (
+                  <span className="flex h-9 w-16 shrink-0 items-center justify-center rounded-sm bg-black/40 font-mono text-[9px] text-muted-foreground">
+                    no preview
+                  </span>
+                )}
+                <span className="min-w-0 truncate text-sm" title={pathOf(it)}>
+                  {it.name}
+                </span>
               </span>
               <input
                 key={it.secs}

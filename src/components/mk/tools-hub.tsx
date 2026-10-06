@@ -5,6 +5,7 @@ import { CommsPanel } from "@/components/mk/comms-panel";
 import { PrompterView } from "@/components/mk/prompter-view";
 import { RundownScreen } from "@/components/mk/rundown-screen";
 import { useComms } from "@/lib/mk/intercom";
+import { playout } from "@/lib/mk/playout";
 import { prompter, usePrompter } from "@/lib/mk/prompter";
 import {
   RUNDOWN_CHANNEL,
@@ -150,6 +151,18 @@ function RundownTab({ items }: { items: RundownItem[] }) {
   };
   const total = items.reduce((a, i) => a + i.secs, 0);
   const atEnd = items.length > 0 && run.idx >= items.length;
+  /** GO NEXT: a video from Playout is started in OBS; leaving the videos stops the playout. */
+  const go = () => {
+    const target = items[run.idx + 1];
+    if (target?.play) {
+      void playout.playById(target.play);
+      return;
+    }
+    const leaving = !!items[run.idx]?.play;
+    goNext(items);
+    if (leaving) void playout.stop();
+  };
+  const pause = () => (items[run.idx]?.play ? void playout.togglePause() : togglePause());
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-1.5">
@@ -166,7 +179,7 @@ function RundownTab({ items }: { items: RundownItem[] }) {
             type="button"
             className={cn("mk-button h-[22px] rounded-[3px] px-3 text-[10px] font-bold", !atEnd && items.length > 0 && "mk-lit-preview")}
             disabled={!items.length || atEnd}
-            onClick={() => goNext(items)}
+            onClick={go}
           >
             {run.idx < 0 ? "START" : run.idx >= items.length - 1 ? "FINISH" : "GO NEXT"}
           </button>
@@ -174,7 +187,7 @@ function RundownTab({ items }: { items: RundownItem[] }) {
             type="button"
             className={cn("mk-button h-[22px] rounded-[3px] px-2 text-[10px]", run.running && "mk-lit-amber")}
             disabled={run.idx < 0 || atEnd}
-            onClick={togglePause}
+            onClick={pause}
           >
             {run.running ? "PAUSE" : "RESUME"}
           </button>
@@ -239,7 +252,8 @@ function RundownTab({ items }: { items: RundownItem[] }) {
                 </button>
                 {isNext && <span className="text-[8px] font-bold tracking-wider text-amber">NEXT</span>}
                 <span className="shrink-0 font-mono text-[9px] text-engrave">{it.secs ? fmtSecs(it.secs) : "—"}</span>
-                <span className="flex shrink-0 opacity-40 group-hover:opacity-100">
+                {it.play && <span className="text-[8px] font-bold tracking-wider text-preview">VIDEO</span>}
+                <span className={cn("flex shrink-0 opacity-40 group-hover:opacity-100", it.play && "hidden")}>
                   <button type="button" aria-label="Move up" onClick={() => move(i, -1)}>
                     <ArrowUp className="h-3 w-3" />
                   </button>
