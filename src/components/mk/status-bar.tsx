@@ -50,6 +50,9 @@ export function StatusBar({ status, statusMessage, demo, menus, listen }: Status
             {statusMessage && !demo ? ` · ${statusMessage}` : ""}
           </span>
         </div>
+        <Link to="/playout" className="mk-button flex h-7 items-center rounded-[3px] px-2 text-[10px]" aria-label="Video playout">
+          Playout
+        </Link>
         <Link to="/settings" className="mk-button flex h-7 w-7 items-center justify-center rounded-[3px]" aria-label="Settings">
           <Settings className="h-3.5 w-3.5" />
         </Link>
