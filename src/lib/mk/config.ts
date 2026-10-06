@@ -275,6 +275,7 @@ export function loadConfig(): MkConfig {
               text: i.text.slice(0, 120),
               secs:
                 typeof i.secs === "number" && i.secs > 0 ? Math.min(Math.round(i.secs), 86_400) : 0,
+              ...(typeof i.play === "string" && i.play ? { play: i.play.slice(0, 40) } : {}),
             }))
         : [],
       fx: mergeFx((parsed as { fx?: unknown }).fx),

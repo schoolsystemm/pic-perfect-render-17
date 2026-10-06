@@ -2693,6 +2693,10 @@ export class SwitcherEngine {
     }
   }
 
+  playoutSay(message: string) {
+    this.notice(message);
+  }
+
   /** Cut the program to the playout scene, remembering what was on air. */
   async playoutTake() {
     const t = this.transport;

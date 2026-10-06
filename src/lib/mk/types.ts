@@ -527,6 +527,8 @@ export interface RundownItem {
   text: string;
   /** Planned length in seconds. 0 = untimed (counts up). */
   secs: number;
+  /** Set when this segment is a video from the Playout list (its id there). */
+  play?: string;
 }
 
 export interface LimiterConfig {
