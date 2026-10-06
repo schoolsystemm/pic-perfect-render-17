@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CamRouteImport } from './routes/cam'
 import { Route as GraphicsRouteImport } from './routes/graphics'
+import { Route as PlayoutRouteImport } from './routes/playout'
 import { Route as PrompterRouteImport } from './routes/prompter'
 import { Route as RundownRouteImport } from './routes/rundown'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -30,6 +31,11 @@ const CamRoute = CamRouteImport.update({
 const GraphicsRoute = GraphicsRouteImport.update({
   id: '/graphics',
   path: '/graphics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlayoutRoute = PlayoutRouteImport.update({
+  id: '/playout',
+  path: '/playout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrompterRoute = PrompterRouteImport.update({
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
+  '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
   '/settings': typeof SettingsRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
+  '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
   '/settings': typeof SettingsRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/cam': typeof CamRoute
   '/graphics': typeof GraphicsRoute
+  '/playout': typeof PlayoutRoute
   '/prompter': typeof PrompterRoute
   '/rundown': typeof RundownRoute
   '/settings': typeof SettingsRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/cam'
     | '/graphics'
+    | '/playout'
     | '/prompter'
     | '/rundown'
     | '/settings'
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/cam'
     | '/graphics'
+    | '/playout'
     | '/prompter'
     | '/rundown'
     | '/settings'
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/cam'
     | '/graphics'
+    | '/playout'
     | '/prompter'
     | '/rundown'
     | '/settings'
@@ -115,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CamRoute: typeof CamRoute
   GraphicsRoute: typeof GraphicsRoute
+  PlayoutRoute: typeof PlayoutRoute
   PrompterRoute: typeof PrompterRoute
   RundownRoute: typeof RundownRoute
   SettingsRoute: typeof SettingsRoute
@@ -142,6 +155,13 @@ declare module '@tanstack/react-router' {
       path: '/graphics'
       fullPath: '/graphics'
       preLoaderRoute: typeof GraphicsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/playout': {
+      id: '/playout'
+      path: '/playout'
+      fullPath: '/playout'
+      preLoaderRoute: typeof PlayoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/prompter': {
@@ -179,6 +199,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CamRoute: CamRoute,
   GraphicsRoute: GraphicsRoute,
+  PlayoutRoute: PlayoutRoute,
   PrompterRoute: PrompterRoute,
   RundownRoute: RundownRoute,
   SettingsRoute: SettingsRoute,
