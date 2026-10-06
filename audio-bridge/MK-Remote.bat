@@ -14,7 +14,6 @@ if "%TSIP%"=="" (
 (
 echo api: yes
 echo apiAddress: :9997
-echo apiAllowOrigin: '*'
 echo webrtcAdditionalHosts: [%TSIP%]
 echo webrtcLocalTCPAddress: :8189
 echo paths:

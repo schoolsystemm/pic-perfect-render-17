@@ -4,7 +4,6 @@
 # MK-Setup.bat writes this file for you (including your LAN address); you normally never edit it.
 api: yes
 apiAddress: :9997
-apiAllowOrigin: '*'
 # webrtcAdditionalHosts: [192.168.0.100]
 paths:
   raw:

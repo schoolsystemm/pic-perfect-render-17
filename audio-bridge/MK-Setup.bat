@@ -64,7 +64,6 @@ $cfg = @'
 # Written by MK-Setup.bat. Aitum Multistream -> RTMP "raw" -> ffmpeg -> Opus "mk" -> phones (WebRTC).
 api: yes
 apiAddress: :9997
-apiAllowOrigin: '*'
 webrtcAdditionalHosts: [__LAN__]
 paths:
   raw:
