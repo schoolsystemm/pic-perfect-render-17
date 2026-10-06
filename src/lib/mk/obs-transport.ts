@@ -1,7 +1,7 @@
 // OBS WebSocket 5.x transport. Browser-only: loaded lazily by the engine.
 import OBSWebSocket, { EventSubscription } from "obs-websocket-js";
 
-import { EventBus, type Transport } from "./transport";
+import { EventBus, PLAYOUT_INPUT, PLAYOUT_SCENE, type PlayoutStatus, type Transport } from "./transport";
 import { FX_SCENE, PIP_SCENES, shellOf, stageOf, type FxRect } from "./fx";
 import { TAG_INPUTS, TAG_SCENES } from "./tags";
 import { MERGE_BG, MERGE_COLOR_INPUT, MERGE_PANES, obsColor } from "./merge";
@@ -808,6 +808,103 @@ export class ObsTransport implements Transport {
       } catch {
         /* not nested there */
       }
+    }
+  }
+
+  // ------------------------------------------------------------------ video playout
+
+  async playoutLoad(path: string) {
+    const sceneName = PLAYOUT_SCENE;
+    const inputName = PLAYOUT_INPUT;
+    try {
+      await this.obs.call("CreateScene", { sceneName });
+    } catch {
+      /* already there */
+    }
+    const settings = {
+      local_file: path,
+      is_local_file: true,
+      looping: false,
+      close_when_inactive: false,
+      restart_on_activate: false,
+      clear_on_media_end: false,
+    };
+    let exists = true;
+    try {
+      await this.obs.call("GetInputSettings", { inputName });
+    } catch {
+      exists = false;
+    }
+    if (exists) {
+      await this.obs.call("SetInputSettings", { inputName, inputSettings: settings, overlay: true });
+      try {
+        await this.obs.call("GetSceneItemId", { sceneName, sourceName: inputName });
+      } catch {
+        await this.obs.call("CreateSceneItem", { sceneName, sourceName: inputName, sceneItemEnabled: true });
+      }
+      return;
+    }
+    const made = await this.obs.call("CreateInput", {
+      sceneName,
+      inputName,
+      inputKind: "ffmpeg_source",
+      inputSettings: settings,
+      sceneItemEnabled: true,
+    });
+    try {
+      await this.obs.call("SetInputAudioTracks", {
+        inputName,
+        inputAudioTracks: { "1": true, "2": false, "3": false, "4": false, "5": false, "6": false },
+      });
+    } catch {
+      /* default tracks stay */
+    }
+    try {
+      const c = await this.getCanvas();
+      await this.obs.call("SetSceneItemTransform", {
+        sceneName,
+        sceneItemId: made.sceneItemId,
+        sceneItemTransform: {
+          positionX: 0,
+          positionY: 0,
+          alignment: 5,
+          boundsType: "OBS_BOUNDS_SCALE_INNER",
+          boundsAlignment: 0,
+          boundsWidth: c.width,
+          boundsHeight: c.height,
+        },
+      });
+    } catch {
+      /* the video just keeps its own size */
+    }
+  }
+
+  async playoutControl(action: "restart" | "pause" | "play" | "stop") {
+    const mediaAction = {
+      restart: "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART",
+      pause: "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE",
+      play: "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY",
+      stop: "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP",
+    }[action];
+    await this.obs.call("TriggerMediaInputAction", { inputName: PLAYOUT_INPUT, mediaAction });
+  }
+
+  async playoutStatus(): Promise<PlayoutStatus | null> {
+    try {
+      const r = await this.obs.call("GetMediaInputStatus", { inputName: PLAYOUT_INPUT });
+      const st = String(r.mediaState ?? "");
+      const state = st.endsWith("PLAYING")
+        ? "playing"
+        : st.endsWith("PAUSED")
+          ? "paused"
+          : st.endsWith("ENDED")
+            ? "ended"
+            : st.endsWith("STOPPED")
+              ? "stopped"
+              : "other";
+      return { state, posMs: Number(r.mediaCursor ?? 0) || 0, durMs: Number(r.mediaDuration ?? 0) || 0 };
+    } catch {
+      return null;
     }
   }
 

@@ -50,7 +50,7 @@ import { TAG_PLACE_MAX, TAG_SCENES, TAG_SLOTS, cleanTags, placeText, tagSpot, ta
 import type { SavedGraphic } from "./gfx-library";
 import { GFX_LAYERS, GFX_SCENE, gfxIdByName, gfxName, layerUrl } from "./graphics";
 import { listener } from "./listen";
-import type { Transport, TransportEvent } from "./transport";
+import { PLAYOUT_SCENE, type PlayoutStatus, type Transport, type TransportEvent } from "./transport";
 import {
   CAM_COUNT,
   DEFAULT_CONFIG,
@@ -2664,6 +2664,57 @@ export class SwitcherEngine {
 
   async stopAirSound() {
     await this.transport?.stopSound().catch(() => {});
+  }
+
+  // ------------------------------------------------------------------ video playout
+
+  private playoutPrev: string | null = null;
+
+  /** Load `path` (a path on the OBS PC) into the playout source, optionally cut to it, and start it from 0. */
+  async playoutPlay(path: string, take: boolean): Promise<boolean> {
+    if (this.state.demo) {
+      this.notice("Demo: the video would play on air");
+      return true;
+    }
+    const t = this.transport;
+    if (!t?.playoutLoad || !t.playoutControl) {
+      this.notice("Not connected to OBS");
+      return false;
+    }
+    try {
+      await t.playoutLoad(path);
+      await new Promise((r) => setTimeout(r, 350)); // let OBS open the file
+      if (take) await this.playoutTake();
+      await t.playoutControl("restart");
+      return true;
+    } catch (error) {
+      this.notice(`Playout failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      return false;
+    }
+  }
+
+  /** Cut the program to the playout scene, remembering what was on air. */
+  async playoutTake() {
+    const t = this.transport;
+    const cur = this.state.programScene;
+    if (!t || cur === PLAYOUT_SCENE) return;
+    this.playoutPrev = cur ?? null;
+    await t.fxCutTo(PLAYOUT_SCENE);
+  }
+
+  /** Cut back to the scene that was on air before the playout. */
+  async playoutReturn() {
+    const prev = this.playoutPrev;
+    this.playoutPrev = null;
+    if (prev && this.state.programScene === PLAYOUT_SCENE) await this.transport?.fxCutTo(prev).catch(() => {});
+  }
+
+  async playoutControl(action: "restart" | "pause" | "play" | "stop") {
+    await this.transport?.playoutControl?.(action).catch(() => {});
+  }
+
+  async playoutStatus(): Promise<PlayoutStatus | null> {
+    return (await this.transport?.playoutStatus?.()) ?? null;
   }
 
   /** Check (and with `fix`, repair) the OBS output that feeds pre-listen. null = not connected. */

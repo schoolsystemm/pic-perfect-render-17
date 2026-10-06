@@ -34,6 +34,15 @@ export type TransportEvent =
   | { type: "stream"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined }
   | { type: "record"; active: boolean; paused?: boolean | undefined; durationMs?: number | undefined };
 
+/** Video playout: one scene holding one media source, reused for every file. */
+export const PLAYOUT_SCENE = "MK Playout";
+export const PLAYOUT_INPUT = "MK Playout Media";
+export interface PlayoutStatus {
+  state: "playing" | "paused" | "ended" | "stopped" | "other";
+  posMs: number;
+  durMs: number;
+}
+
 export interface Transport {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
@@ -68,6 +77,10 @@ export interface Transport {
   setInputActive?(name: string, on: boolean): Promise<void>;
   /** Remove parked items left by an earlier session. */
   clearParkedInputs?(): Promise<void>;
+  /** Playout: make sure the "MK Playout" scene + media source exist and point the source at `path` (a path on the OBS PC). Does not start it. */
+  playoutLoad?(path: string): Promise<void>;
+  playoutControl?(action: "restart" | "pause" | "play" | "stop"): Promise<void>;
+  playoutStatus?(): Promise<PlayoutStatus | null>;
   /** Set an input's gain + 3-band EQ (the MK Gain / MK EQ filters). */
   setInputEq(name: string, eq: EqValues): Promise<void>;
   /**
